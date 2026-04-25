@@ -1,0 +1,462 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-black: #000000;
+  --color-gray-pale: #f5f5f7;
+  --color-ink: #1d1d1f;
+  --color-ink-soft: #6e6e73;
+  --color-blue-action: #0071e3;
+  --color-blue-link: #0066cc;
+  --color-white: #ffffff;
+  --color-surface-a: #272729;
+  --color-surface-b: #262629;
+  --color-surface-c: #28282b;
+  --color-border-soft: #d2d2d7;
+  --color-border-strong: #86868b;
+  --color-danger: #d93025;
+}
+
+:root {
+  --app-bg: #f5f5f7;
+  --app-card: #ffffff;
+  --app-card-dark: #272729;
+  --app-text: #1d1d1f;
+  --app-text-soft: #6e6e73;
+  --app-border: #d2d2d7;
+  --app-border-strong: #86868b;
+  --app-accent: #0071e3;
+  --app-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+  --app-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--app-bg);
+  color: var(--app-text);
+  line-height: 1.47;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--app-accent);
+  color: #ffffff;
+}
+
+h1, h2, h3, h4, h5, h6, .display-family {
+  font-family: 'Inter Tight', 'Inter', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d2d2d7;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #86868b;
+  background-clip: padding-box;
+}
+
+/* ─── Layout Shell ─── */
+.app-shell {
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  background-color: #000000;
+}
+
+/* ─── Sidebar ─── */
+.app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 260px;
+  background: #000000;
+  color: #f5f5f7;
+  border-right: 1px solid #272729;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 22px 20px;
+}
+
+.app-sidebar__mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #0071e3;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+}
+
+.app-sidebar__title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.app-sidebar__subtitle {
+  font-size: 0.75rem;
+  color: #6e6e73;
+}
+
+.app-sidebar__nav {
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.app-sidebar__section {
+  padding: 12px 12px 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6e6e73;
+}
+
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #d2d2d7;
+  text-decoration: none;
+  transition: background 0.1s ease, color 0.1s ease;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.app-nav-link:hover {
+  color: #ffffff;
+  background: #1d1d1f;
+}
+
+.app-nav-link.active {
+  color: #ffffff;
+  background: #272729;
+}
+
+.app-nav-link__icon {
+  width: 18px;
+  height: 18px;
+}
+
+.app-nav-link__label {
+  flex: 1;
+}
+
+/* ─── Main Content ─── */
+.app-content-wrapper {
+  flex: 1;
+  margin-left: 260px;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--app-bg);
+  min-height: 100vh;
+  border-top-left-radius: 12px;
+  overflow: hidden;
+}
+
+/* ─── Topbar ─── */
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 32px;
+  background: rgba(245, 245, 247, 0.8);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.app-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.app-topbar__icon-btn {
+  color: var(--app-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.app-topbar__icon-btn:hover {
+  color: var(--app-accent);
+}
+
+.app-topbar__avatar-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.app-topbar__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1d1d1f;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+.app-topbar__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid var(--app-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.app-topbar__menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--app-text);
+  text-align: left;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.app-topbar__menu-item:hover {
+  background: var(--app-bg);
+}
+
+.app-topbar__menu-item.danger {
+  color: var(--color-danger);
+}
+
+/* ─── Main Area ─── */
+.app-main {
+  flex: 1;
+  padding: 32px 40px 64px;
+}
+
+.app-main__inner {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ─── UI Components ─── */
+.card,
+.apple-card,
+.surface {
+  background: var(--app-card);
+  border-radius: 18px;
+  border: 1px solid var(--app-border);
+  box-shadow: none;
+}
+
+.apple-table-card {
+  background: var(--app-card);
+  border-radius: 12px;
+  border: 1px solid var(--app-border);
+  overflow: hidden;
+}
+
+.apple-panel-dark {
+  background: #1d1d1f;
+  color: #ffffff;
+  border-radius: 18px;
+}
+
+/* Buttons */
+.btn-primary,
+.btn-secondary,
+.btn-dark,
+.btn-danger {
+  appearance: none;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 8px 15px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--app-accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: #0066cc;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: var(--app-text);
+  border-color: var(--app-border-strong);
+}
+
+.btn-secondary:hover {
+  background: var(--app-bg);
+}
+
+.btn-dark {
+  background: #1d1d1f;
+  color: #ffffff;
+}
+
+.btn-dark:hover {
+  background: #272729;
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--color-danger);
+  border-color: rgba(217, 48, 37, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(217, 48, 37, 0.05);
+}
+
+/* Inputs */
+input[type="text"], input[type="email"], input[type="password"],
+input[type="number"], input[type="url"], input[type="search"],
+input[type="date"], input[type="datetime-local"], textarea, select {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--app-border-strong);
+  background: #ffffff;
+  color: var(--app-text);
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 0.95rem;
+  transition: border-color 0.15s ease;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 1px var(--app-accent);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--app-text-soft);
+  border-bottom: 1px solid var(--app-border);
+  background: #ffffff;
+}
+
+tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-text);
+  font-size: 0.9rem;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Typography Classes */
+.hero-display { font-family: 'Inter Tight', sans-serif; font-size: 3.5rem; font-weight: 600; line-height: 1.07; letter-spacing: -0.02em; }
+.section-display { font-family: 'Inter Tight', sans-serif; font-size: 3rem; font-weight: 600; line-height: 1.08; letter-spacing: -0.01em; }
+.product-heading { font-family: 'Inter Tight', sans-serif; font-size: 2.5rem; font-weight: 600; line-height: 1.10; }
+.card-title { font-family: 'Inter Tight', sans-serif; font-size: 1.75rem; font-weight: 600; line-height: 1.14; letter-spacing: 0.01em; }
+.utility-heading { font-family: 'Inter Tight', sans-serif; font-size: 1.5rem; font-weight: 600; line-height: 1.17; letter-spacing: 0.01em; }
+
+.body-primary { font-size: 1.0625rem; line-height: 1.47; letter-spacing: -0.022em; color: var(--app-text); }
+.body-emphasis { font-size: 1.0625rem; line-height: 1.24; font-weight: 600; letter-spacing: -0.022em; color: var(--app-text); }
+.control-label { font-size: 0.875rem; font-weight: 500; line-height: 1.29; letter-spacing: -0.014em; }
+.micro-ui { font-size: 0.75rem; font-weight: 400; line-height: 1.33; letter-spacing: -0.007em; color: var(--app-text-soft); }
+
+.section-kicker { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--app-text-soft); }
+
+/* Utilities */
+.apple-link {
+  color: var(--app-accent);
+  text-decoration: none;
+}
+.apple-link:hover {
+  text-decoration: underline;
+}
+
+.animate-fade-in { animation: app-fade-in 0.3s ease both; }
+@keyframes app-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.animate-slide-up { animation: app-slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes app-slide-up { 
+  from { opacity: 0; transform: translateY(16px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .app-shell { flex-direction: column; background-color: var(--app-bg); }
+  .app-sidebar { width: 100%; position: static; border-right: none; border-bottom: 1px solid #272729; }
+  .app-content-wrapper { margin-left: 0; border-top-left-radius: 0; }
+  .app-topbar { padding: 12px 16px; }
+  .app-main { padding: 24px 16px 48px; }
+}
