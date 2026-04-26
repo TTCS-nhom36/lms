@@ -6,6 +6,8 @@ import com.ttcs.backend.dto.response.SubmissionResponse;
 import com.ttcs.backend.entity.Assignment;
 import com.ttcs.backend.entity.Submission;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.SubmissionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
@@ -14,10 +16,8 @@ import java.util.List;
 import java.util.UUID;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -78,17 +78,17 @@ public class SubmissionService {
 
     private Submission findSubmissionEntityById(Long id) {
         return submissionRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Submission not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Submission not found: " + id));
     }
 
     private Assignment findAssignmentById(Long id) {
         return assignmentRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + id));
     }
 
     private User findUserById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 
     private BigDecimal resolveFinalScore(Submission submission) {

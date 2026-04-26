@@ -3,16 +3,16 @@ package com.ttcs.backend.service;
 import com.ttcs.backend.dto.request.EnrollmentRequest;
 import com.ttcs.backend.dto.response.EnrollmentResponse;
 import com.ttcs.backend.entity.Enrollment;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.EnrollmentMapper;
 import com.ttcs.backend.repository.CourseRepository;
 import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -44,7 +44,7 @@ public class EnrollmentService {
         Enrollment enrollment = enrollmentMapper.toEntity(request);
         enrollment.setUser(findUserById(request.getUserId()));
         enrollment.setCourse(courseRepository.findById(request.getCourseId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Course not found: " + request.getCourseId())));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + request.getCourseId())));
         return enrollmentMapper.toResponse(enrollmentRepository.save(enrollment));
     }
 
@@ -52,7 +52,7 @@ public class EnrollmentService {
         Enrollment enrollment = findEnrollmentEntityById(id);
         enrollment.setUser(findUserById(request.getUserId()));
         enrollment.setCourse(courseRepository.findById(request.getCourseId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Course not found: " + request.getCourseId())));
+            .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + request.getCourseId())));
         enrollment.setEnrolledAt(request.getEnrolledAt());
         enrollment.setStatus(request.getStatus());
         enrollment.setCompletedAt(request.getCompletedAt());
@@ -65,11 +65,11 @@ public class EnrollmentService {
 
     private Enrollment findEnrollmentEntityById(Long id) {
         return enrollmentRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Enrollment not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Enrollment not found: " + id));
     }
 
     private com.ttcs.backend.entity.User findUserById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 }

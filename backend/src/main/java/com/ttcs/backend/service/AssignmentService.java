@@ -11,6 +11,8 @@ import com.ttcs.backend.entity.Lesson;
 import com.ttcs.backend.entity.Question;
 import com.ttcs.backend.entity.Submission;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.AssignmentMapper;
 import com.ttcs.backend.mapper.QuestionMapper;
 import com.ttcs.backend.mapper.SubmissionMapper;
@@ -22,10 +24,8 @@ import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -129,27 +129,27 @@ public class AssignmentService {
                 .filter(item -> item.getAssignment() != null && assignmentId.equals(item.getAssignment().getId()))
                 .filter(item -> item.getUser() != null && userId.equals(item.getUser().getId()))
                 .findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Submission not found for this user"));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Submission not found for this user"));
         return submissionMapper.toResponse(submission);
     }
 
     private Assignment findAssignmentEntityById(Long id) {
         return assignmentRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + id));
     }
 
     private Course findCourseById(Long id) {
         return courseRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Course not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + id));
     }
 
     private Lesson findLessonById(Long id) {
         return lessonRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lesson not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Lesson not found: " + id));
     }
 
     private User findUserById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 }

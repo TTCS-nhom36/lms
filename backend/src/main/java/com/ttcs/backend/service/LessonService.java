@@ -9,6 +9,8 @@ import com.ttcs.backend.entity.Chapter;
 import com.ttcs.backend.entity.LessonProgress;
 import com.ttcs.backend.entity.Lesson;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.LessonMapper;
 import com.ttcs.backend.mapper.LessonProgressMapper;
 import com.ttcs.backend.repository.ChapterRepository;
@@ -18,10 +20,8 @@ import com.ttcs.backend.repository.LessonProgressRepository;
 import com.ttcs.backend.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -69,7 +69,7 @@ public class LessonService {
         if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId)) {
             return lessonMapper.toResponse(lesson);
         }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Lesson requires enrollment");
+        throw new AppException(ErrorCode.ACCESS_DENIED, "Lesson requires enrollment");
     }
 
     public LessonResponse create(CreateLessonRequest request) {
@@ -128,17 +128,17 @@ public class LessonService {
 
     private Lesson findLessonEntityById(Long id) {
         return lessonRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lesson not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Lesson not found: " + id));
     }
 
     private Chapter findChapterById(Long id) {
         return chapterRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chapter not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Chapter not found: " + id));
     }
 
     private User findUserById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 
     private boolean hasAccess(Lesson lesson, UUID userId) {

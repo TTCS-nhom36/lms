@@ -8,6 +8,8 @@ import com.ttcs.backend.dto.response.PageResponse;
 import com.ttcs.backend.dto.response.UserResponse;
 import com.ttcs.backend.enums.UserRole;
 import com.ttcs.backend.service.UserService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -70,18 +72,20 @@ public class UserController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getMyProfile(@RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(userService.findById(userId));
+    public ResponseEntity<UserResponse> getMyProfile(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(userService.findByEmail(jwt.getSubject()));
     }
 
     @PutMapping("/me")
-    public ResponseEntity<UserResponse> updateMyProfile(@RequestHeader("X-User-Id") UUID userId, @RequestBody UpdateMyProfileRequest request) {
-        return ResponseEntity.ok(userService.updateProfile(userId, request));
+    public ResponseEntity<UserResponse> updateMyProfile(@AuthenticationPrincipal Jwt jwt, @RequestBody UpdateMyProfileRequest request) {
+        UserResponse user = userService.findByEmail(jwt.getSubject());
+        return ResponseEntity.ok(userService.updateProfile(user.getId(), request));
     }
 
     @PatchMapping("/me/password")
-    public ResponseEntity<Void> changeMyPassword(@RequestHeader("X-User-Id") UUID userId, @RequestBody ChangePasswordRequest request) {
-        userService.changePassword(userId, request);
+    public ResponseEntity<Void> changeMyPassword(@AuthenticationPrincipal Jwt jwt, @RequestBody ChangePasswordRequest request) {
+        UserResponse user = userService.findByEmail(jwt.getSubject());
+        userService.changePassword(user.getId(), request);
         return ResponseEntity.noContent().build();
     }
 }

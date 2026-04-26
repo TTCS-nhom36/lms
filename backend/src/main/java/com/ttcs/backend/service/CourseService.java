@@ -34,10 +34,8 @@ import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -222,18 +220,18 @@ public class CourseService {
             workbook.write(outputStream);
             return outputStream.toByteArray();
         } catch (java.io.IOException exception) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to export gradebook", exception);
+            throw new AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to export gradebook", exception);
         }
     }
 
     private Course findCourseEntityById(Long id) {
         return courseRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Course not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + id));
     }
 
     private User findUserEntityById(java.util.UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 
     private User findRequiredUser(UUID id) {

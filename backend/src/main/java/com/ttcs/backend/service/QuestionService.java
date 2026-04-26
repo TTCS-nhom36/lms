@@ -4,14 +4,14 @@ import com.ttcs.backend.dto.request.CreateQuestionRequest;
 import com.ttcs.backend.dto.response.QuestionResponse;
 import com.ttcs.backend.entity.Assignment;
 import com.ttcs.backend.entity.Question;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.QuestionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
 import com.ttcs.backend.repository.QuestionRepository;
 import java.util.List;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -59,11 +59,11 @@ public class QuestionService {
 
     private Question findQuestionEntityById(Long id) {
         return questionRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Question not found: " + id));
     }
 
     private Assignment findAssignmentById(Long id) {
         return assignmentRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + id));
     }
 }

@@ -3,16 +3,16 @@ package com.ttcs.backend.service;
 import com.ttcs.backend.dto.request.LessonProgressRequest;
 import com.ttcs.backend.dto.response.LessonProgressResponse;
 import com.ttcs.backend.entity.LessonProgress;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.LessonProgressMapper;
 import com.ttcs.backend.repository.LessonProgressRepository;
 import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -44,7 +44,7 @@ public class LessonProgressService {
         LessonProgress lessonProgress = lessonProgressMapper.toEntity(request);
         lessonProgress.setUser(findUserById(request.getUserId()));
         lessonProgress.setLesson(lessonRepository.findById(request.getLessonId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lesson not found: " + request.getLessonId())));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Lesson not found: " + request.getLessonId())));
         return lessonProgressMapper.toResponse(lessonProgressRepository.save(lessonProgress));
     }
 
@@ -52,7 +52,7 @@ public class LessonProgressService {
         LessonProgress lessonProgress = findLessonProgressEntityById(id);
         lessonProgress.setUser(findUserById(request.getUserId()));
         lessonProgress.setLesson(lessonRepository.findById(request.getLessonId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lesson not found: " + request.getLessonId())));
+            .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Lesson not found: " + request.getLessonId())));
         lessonProgress.setIsCompleted(request.getIsCompleted());
         lessonProgress.setWatchDurationSecs(request.getWatchDurationSecs());
         lessonProgress.setLastAccessedAt(request.getLastAccessedAt());
@@ -66,11 +66,11 @@ public class LessonProgressService {
 
     private LessonProgress findLessonProgressEntityById(Long id) {
         return lessonProgressRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "LessonProgress not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "LessonProgress not found: " + id));
     }
 
     private com.ttcs.backend.entity.User findUserById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 }
