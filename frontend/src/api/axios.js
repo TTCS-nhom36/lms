@@ -8,9 +8,9 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const userId = localStorage.getItem('lms_user_id');
-  if (userId) {
-    config.headers['X-User-Id'] = userId;
+  const token = localStorage.getItem('lms_access_token');
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
   return config;
 });

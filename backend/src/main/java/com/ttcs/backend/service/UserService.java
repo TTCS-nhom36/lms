@@ -12,13 +12,12 @@ import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.UserMapper;
 import com.ttcs.backend.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -26,10 +25,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper) {
+    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional(readOnly = true)
@@ -54,11 +55,18 @@ public class UserService {
         return userMapper.toResponse(findUserEntityById(id));
     }
 
+    @Transactional(readOnly = true)
+    public UserResponse findByEmail(String email) {
+        return userMapper.toResponse(userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND)));
+    }
+
     public UserResponse create(UserRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new AppException(ErrorCode.BAD_REQUEST, "Email đã tồn tại");
         }
         User user = userMapper.toEntity(request);
+        user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
         return userMapper.toResponse(userRepository.save(user));
     }
 
@@ -96,7 +104,7 @@ public class UserService {
 
     public UserResponse update(UUID id, UserRequest request) {
         User user = findUserEntityById(id);
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(request.getEmail()) && !user.getEmail().equals(request.getEmail())) {
             throw new AppException(ErrorCode.BAD_REQUEST, "Email đã tồn tại");
         }
         user.setEmail(request.getEmail());
@@ -133,6 +141,6 @@ public class UserService {
 
     private User findUserEntityById(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
     }
 }

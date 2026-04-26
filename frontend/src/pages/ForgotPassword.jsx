@@ -1,14 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { Sparkles, Layers3, ArrowRight, Lock, Mail } from 'lucide-react';
+import { authApi } from '../api/authApi';
+import { Sparkles, Layers3, ArrowRight, Mail } from 'lucide-react';
 
-export default function Login() {
-  const { login } = useAuth();
+export default function ForgotPassword() {
   const navigate = useNavigate();
-  
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -17,11 +14,11 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login({ email, password });
-      // auth context will set user, and the RoleRedirect in App.jsx will handle navigation
-      navigate('/');
+      await authApi.forgotPassword({ email });
+      // Proceed to reset password screen and pass the email
+      navigate('/reset-password', { state: { email } });
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to login');
+      setError(err.response?.data?.message || 'Failed to send OTP. Please check the email.');
     } finally {
       setLoading(false);
     }
@@ -30,11 +27,11 @@ export default function Login() {
   return (
     <div className="min-h-screen px-5 py-6 lg:px-10 lg:py-8 flex items-center justify-center">
       <div className="w-full max-w-md">
-        <section className="card px-5 py-5 lg:px-6 lg:py-6 animate-slide-up">
+        <section className="card px-5 py-5 lg:px-6 lg:py-6 animate-slide-up flex flex-col justify-center">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <div className="section-kicker mb-2">Welcome back</div>
-              <h2 className="card-title">Sign in to your account</h2>
+              <div className="section-kicker mb-2">Password Reset</div>
+              <h2 className="card-title">Send OTP</h2>
             </div>
             <div className="w-11 h-11 rounded-2xl bg-[color:var(--app-accent-soft)] text-[color:var(--app-accent)] flex items-center justify-center">
               <Layers3 size={18} />
@@ -63,49 +60,25 @@ export default function Login() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                  <Lock size={16} className="text-[color:var(--app-text-soft)]" />
-                  Password
-                </label>
-                <Link to="/forgot-password" className="text-sm font-medium text-[color:var(--app-accent)] hover:underline">
-                  Forgot password?
-                </Link>
-              </div>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="app-input w-full"
-                placeholder="••••••••"
-              />
-            </div>
-
             <button
               type="submit"
               disabled={loading}
               className="btn-primary w-full justify-center mt-2"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? 'Sending OTP...' : 'Send OTP'}
               {!loading && <ArrowRight size={18} />}
             </button>
             
             <div className="text-center mt-4">
               <p className="text-sm text-[color:var(--app-text-soft)]">
-                Don't have an account?{' '}
-                <Link to="/register" className="font-medium text-[color:var(--app-accent)] hover:underline">
-                  Sign up
+                Remember your password?{' '}
+                <Link to="/login" className="font-medium text-[color:var(--app-accent)] hover:underline">
+                  Sign in
                 </Link>
               </p>
             </div>
           </form>
         </section>
-      </div>
-
-      <div className="fixed bottom-4 left-0 right-0 text-center pointer-events-none">
-        <p className="micro-ui text-[color:var(--app-text-soft)]">LMS Portal Platform © 2026</p>
       </div>
     </div>
   );

@@ -1,4 +1,68 @@
 package com.ttcs.backend.config;
 
-public class JwtAuthenticationEntryPoint {
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.ttcs.backend.exception.ApiErrorResponse;
+import com.ttcs.backend.exception.ErrorCode;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.util.Date;
+import java.util.TimeZone;
+import java.time.LocalDateTime;
+
+@Component
+public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
+
+    @Override
+    public void commence(HttpServletRequest request,
+                         HttpServletResponse response,
+                         AuthenticationException authException) throws IOException, ServletException {
+        ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
+
+        response.setStatus(errorCode.getStatus().value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+
+        ApiErrorResponse errorResponse = new ApiErrorResponse(
+                LocalDateTime.now(),
+                errorCode.getCode(),
+                errorCode.getStatus().getReasonPhrase(),
+                errorCode.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.setTimeZone(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+        response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
+        response.flushBuffer();
+    }
+
+    private String resolveOriginalPath(HttpServletRequest request) {
+        Object errorUri = request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI);
+        if (errorUri != null) {
+            return errorUri.toString();
+        }
+
+        Object forwardUri = request.getAttribute(RequestDispatcher.FORWARD_REQUEST_URI);
+        if (forwardUri != null) {
+            return forwardUri.toString();
+        }
+
+        Object includeUri = request.getAttribute(RequestDispatcher.INCLUDE_REQUEST_URI);
+        if (includeUri != null) {
+            return includeUri.toString();
+        }
+
+        return request.getRequestURI();
+    }
 }
+

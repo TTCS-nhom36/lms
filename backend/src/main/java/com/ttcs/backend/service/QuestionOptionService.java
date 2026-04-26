@@ -4,14 +4,14 @@ import com.ttcs.backend.dto.request.QuestionOptionRequest;
 import com.ttcs.backend.dto.response.QuestionOptionResponse;
 import com.ttcs.backend.entity.Question;
 import com.ttcs.backend.entity.QuestionOption;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.QuestionOptionMapper;
 import com.ttcs.backend.repository.QuestionOptionRepository;
 import com.ttcs.backend.repository.QuestionRepository;
 import java.util.List;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -58,11 +58,11 @@ public class QuestionOptionService {
 
     private QuestionOption findQuestionOptionEntityById(Long id) {
         return questionOptionRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "QuestionOption not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "QuestionOption not found: " + id));
     }
 
     private Question findQuestionById(Long id) {
         return questionRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found: " + id));
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Question not found: " + id));
     }
 }
