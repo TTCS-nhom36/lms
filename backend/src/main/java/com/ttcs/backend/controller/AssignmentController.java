@@ -7,9 +7,9 @@ import com.ttcs.backend.dto.response.AssignmentResponse;
 import com.ttcs.backend.dto.response.QuestionResponse;
 import com.ttcs.backend.dto.response.SubmissionResponse;
 import com.ttcs.backend.service.AssignmentService;
+import com.ttcs.backend.service.CurrentUserService;
 import com.ttcs.backend.service.SubmissionService;
 import java.util.List;
-import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -25,10 +24,12 @@ public class AssignmentController {
 
     private final AssignmentService assignmentService;
     private final SubmissionService submissionService;
+    private final CurrentUserService currentUserService;
 
-    public AssignmentController(AssignmentService assignmentService, SubmissionService submissionService) {
+    public AssignmentController(AssignmentService assignmentService, SubmissionService submissionService, CurrentUserService currentUserService) {
         this.assignmentService = assignmentService;
         this.submissionService = submissionService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping("/api/lms/courses/{courseId}/assignments")
@@ -63,11 +64,9 @@ public class AssignmentController {
     }
 
     @PostMapping("/api/lms/assignments/{id}/submit")
-    public ResponseEntity<SubmissionResponse> submit(@PathVariable Long id, @RequestHeader(value = "X-User-Id", required = false) UUID userId, @RequestBody SubmitRequest request) {
+    public ResponseEntity<SubmissionResponse> submit(@PathVariable Long id, @RequestBody SubmitRequest request) {
         request.setAssignmentId(id);
-        if (userId != null) {
-            request.setUserId(userId);
-        }
+        request.setUserId(currentUserService.getCurrentUserId());
         return ResponseEntity.ok(submissionService.create(request));
     }
 
@@ -77,7 +76,8 @@ public class AssignmentController {
     }
 
     @GetMapping("/api/lms/assignments/{id}/my-submission")
-    public ResponseEntity<SubmissionResponse> getMySubmission(@PathVariable Long id, @RequestHeader("X-User-Id") UUID userId) {
+    public ResponseEntity<SubmissionResponse> getMySubmission(@PathVariable Long id) {
+        var userId = currentUserService.getCurrentUserId();
         return ResponseEntity.ok(assignmentService.findMySubmission(id, userId));
     }
 }
