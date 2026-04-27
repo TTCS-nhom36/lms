@@ -56,6 +56,7 @@ public class JwtService {
                 .expirationTime(expiredTime)
                 .jwtID(jwtID)
                 .claim("role", user.getRole().name())
+            .claim("userId", user.getId().toString())
                 .build();
 
         Payload payload = new Payload(claimsSet.toJSONObject());
