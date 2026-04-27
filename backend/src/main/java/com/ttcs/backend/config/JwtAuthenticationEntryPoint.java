@@ -2,6 +2,7 @@ package com.ttcs.backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ttcs.backend.exception.ApiErrorResponse;
 import com.ttcs.backend.exception.ErrorCode;
 import jakarta.servlet.RequestDispatcher;
@@ -14,34 +15,39 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.Date;
 import java.util.TimeZone;
 import java.time.LocalDateTime;
 
 @Component
 public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
+    private final ObjectMapper objectMapper = buildObjectMapper();
+
+    private static ObjectMapper buildObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.setTimeZone(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+        return mapper;
+    }
+
     @Override
     public void commence(HttpServletRequest request,
-                         HttpServletResponse response,
-                         AuthenticationException authException) throws IOException, ServletException {
+            HttpServletResponse response,
+            AuthenticationException authException) throws IOException, ServletException {
         ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
 
         response.setStatus(errorCode.getStatus().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 
-        ApiErrorResponse errorResponse = new ApiErrorResponse(
-                LocalDateTime.now(),
-                errorCode.getCode(),
-                errorCode.getStatus().getReasonPhrase(),
-                errorCode.getMessage(),
-                request.getRequestURI(),
-                null
-        );
+        ApiErrorResponse errorResponse = ApiErrorResponse.builder()
+                .status(errorCode.getCode())
+                .error(errorCode.getStatus().getReasonPhrase())
+                .message(errorCode.getMessage())
+                .timestamp(LocalDateTime.now())
+                .path(request.getRequestURI())
+                .build();
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        objectMapper.setTimeZone(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
         response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
         response.flushBuffer();
     }
@@ -65,4 +71,3 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         return request.getRequestURI();
     }
 }
-
