@@ -18,7 +18,6 @@ public class QuestionOptionMapper {
                 .id(questionOption.getId())
                 .questionId(questionOption.getQuestion() != null ? questionOption.getQuestion().getId() : null)
                 .content(questionOption.getContent())
-                .isCorrect(questionOption.getIsCorrect())
                 .orderIndex(questionOption.getOrderIndex())
                 .build();
     }

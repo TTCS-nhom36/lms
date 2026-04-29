@@ -11,10 +11,9 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class QuestionOptionResponse {
+public class SelectedAnswerResponse {
 
-    private Long id;
     private Long questionId;
-    private String content;
-    private Integer orderIndex;
+    private Long selectedOptionId;
+    private Boolean isCorrect;
 }
