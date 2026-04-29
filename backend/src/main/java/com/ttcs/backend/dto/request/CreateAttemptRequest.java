@@ -1,5 +1,6 @@
-package com.ttcs.backend.dto.response;
+package com.ttcs.backend.dto.request;
 
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,10 +12,8 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class QuestionOptionResponse {
+public class CreateAttemptRequest {
 
-    private Long id;
-    private Long questionId;
-    private String content;
-    private Integer orderIndex;
+    private Long assignmentId;
+    private UUID userId;
 }
