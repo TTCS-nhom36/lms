@@ -1,4 +1,4 @@
-package com.ttcs.backend.dto.response;
+package com.ttcs.backend.dto.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,10 +11,8 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class QuestionOptionResponse {
+public class AnswerRequest {
 
-    private Long id;
     private Long questionId;
-    private String content;
-    private Integer orderIndex;
+    private Long selectedAnswerId;
 }

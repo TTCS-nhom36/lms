@@ -1,5 +1,7 @@
 package com.ttcs.backend.dto.response;
 
+import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,10 +13,10 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class QuestionOptionResponse {
+public class QuizAttemptResponse {
 
     private Long id;
-    private Long questionId;
-    private String content;
-    private Integer orderIndex;
+    private UUID userId;
+    private Long assignmentId;
+    private LocalDateTime createdAt;
 }
