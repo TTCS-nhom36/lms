@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { courseApi } from '../../api/courseApi';
 import { useToast } from '../../contexts/ToastContext';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -24,7 +25,8 @@ export default function AdminCourses() {
   const [editCourse, setEditCourse] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const [form, setForm] = useState({ title: '', description: '', thumbnailUrl: '', status: 'DRAFT' });
+  const [form, setForm] = useState({ title: '', description: '', thumbnailUrl: '', status: 'DRAFT', createdById: null });
+  const { user } = useAuth();
 
   useEffect(() => { loadCourses(); }, [page, search, statusFilter]);
 
@@ -41,15 +43,39 @@ export default function AdminCourses() {
     finally { setLoading(false); }
   };
 
-  const handleCreate = () => { setEditCourse(null); setForm({ title: '', description: '', thumbnailUrl: '', status: 'DRAFT' }); setShowModal(true); };
-  const handleEdit = (c) => { setEditCourse(c); setForm({ title: c.title || '', description: c.description || '', thumbnailUrl: c.thumbnailUrl || '', status: c.status }); setShowModal(true); };
+  const handleCreate = () => {
+    setEditCourse(null);
+    setForm({ title: '', description: '', thumbnailUrl: '', status: 'DRAFT', createdById: user?.id || null });
+    setShowModal(true);
+  };
+
+  const handleEdit = (c) => {
+    setEditCourse(c);
+    setForm({
+      title: c.title || '',
+      description: c.description || '',
+      thumbnailUrl: c.thumbnailUrl || '',
+      status: c.status,
+      createdById: c.createdById || user?.id || null,
+    });
+    setShowModal(true);
+  };
 
   const handleSave = async () => {
     try {
-      if (editCourse) { await courseApi.update(editCourse.id, form); toast.success('Course updated'); }
-      else { await courseApi.create(form); toast.success('Course created'); }
-      setShowModal(false); loadCourses();
-    } catch { toast.error('Failed to save course'); }
+      const payload = { ...form, createdById: form.createdById || user?.id };
+      if (editCourse) {
+        await courseApi.update(editCourse.id, payload);
+        toast.success('Course updated');
+      } else {
+        await courseApi.create(payload);
+        toast.success('Course created');
+      }
+      setShowModal(false);
+      loadCourses();
+    } catch {
+      toast.error('Failed to save course');
+    }
   };
 
   const handleDelete = async () => {
