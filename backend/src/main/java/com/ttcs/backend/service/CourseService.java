@@ -1,12 +1,21 @@
 package com.ttcs.backend.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.ttcs.backend.dto.request.CreateCourseRequest;
 import com.ttcs.backend.dto.response.ChapterResponse;
 import com.ttcs.backend.dto.response.CourseDetailResponse;
 import com.ttcs.backend.dto.response.CourseResponse;
+import com.ttcs.backend.dto.response.EnrollmentResponse;
 import com.ttcs.backend.dto.response.GradebookEntryResponse;
 import com.ttcs.backend.dto.response.GradebookResponse;
-import com.ttcs.backend.dto.response.EnrollmentResponse;
 import com.ttcs.backend.dto.response.PageResponse;
 import com.ttcs.backend.dto.response.UserResponse;
 import com.ttcs.backend.entity.Assignment;
@@ -29,13 +38,6 @@ import com.ttcs.backend.repository.CourseRepository;
 import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.Comparator;
-import java.util.List;
-import java.util.UUID;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional
@@ -117,7 +119,7 @@ public class CourseService {
     }
 
     public void delete(Long id) {
-        archive(id);
+        courseRepository.deleteById(id);
     }
 
     public CourseResponse archive(Long id) {
