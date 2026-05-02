@@ -7,7 +7,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
 import Pagination from '../../components/ui/Pagination';
-import { Plus, Search, Edit, Trash2, Shield, Users as UsersIcon } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Users as UsersIcon } from 'lucide-react';
 
 export default function AdminUsers() {
   const toast = useToast();
@@ -22,9 +22,6 @@ export default function AdminUsers() {
   const [editUser, setEditUser] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const [showRoleModal, setShowRoleModal] = useState(false);
-  const [roleTarget, setRoleTarget] = useState(null);
-  const [newRole, setNewRole] = useState('');
   const [form, setForm] = useState({
     email: '', passwordHash: '', fullName: '', phone: '', avatarUrl: '', role: 'STUDENT', isActive: true,
   });
@@ -68,11 +65,6 @@ export default function AdminUsers() {
   const handleDelete = async () => {
     try { await userApi.delete(deleteId); toast.success('User deactivated'); setShowConfirm(false); loadUsers(); }
     catch { toast.error('Failed to deactivate user'); }
-  };
-
-  const handleRoleChange = async () => {
-    try { await userApi.updateRole(roleTarget.id, { role: newRole }); toast.success('Role updated'); setShowRoleModal(false); loadUsers(); }
-    catch { toast.error('Failed to update role'); }
   };
 
   if (loading) return <LoadingSpinner text="Loading users..." />;
@@ -149,9 +141,6 @@ export default function AdminUsers() {
                     </td>
                     <td className="!pr-8 align-middle">
                       <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                        <button onClick={() => { setRoleTarget(u); setNewRole(u.role); setShowRoleModal(true); }} className="w-8 h-8 rounded-full flex items-center justify-center text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] transition-colors" title="Change Role">
-                          <Shield size={16} />
-                        </button>
                         <button onClick={() => handleEdit(u)} className="w-8 h-8 rounded-full flex items-center justify-center text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#0071e3] transition-colors" title="Edit">
                           <Edit size={16} />
                         </button>
@@ -214,23 +203,6 @@ export default function AdminUsers() {
           <div className="flex justify-end gap-3 pt-6">
             <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
             <button onClick={handleSave} className="btn-primary">Save User</button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={showRoleModal} onClose={() => setShowRoleModal(false)} title="Modify Role" size="sm">
-        <div className="space-y-6">
-          <p className="body-primary text-[#6e6e73]">
-            Select a new role designation for <strong className="text-[#1d1d1f] font-semibold">{roleTarget?.fullName}</strong>.
-          </p>
-          <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full">
-            <option value="ADMIN">Administrator</option>
-            <option value="INSTRUCTOR">Instructor</option>
-            <option value="STUDENT">Student</option>
-          </select>
-          <div className="flex justify-end gap-3">
-            <button onClick={() => setShowRoleModal(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleRoleChange} className="btn-primary">Apply Role</button>
           </div>
         </div>
       </Modal>

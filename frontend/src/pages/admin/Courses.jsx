@@ -122,7 +122,8 @@ export default function AdminCourses() {
           {courses.map((c, i) => (
             <div
               key={c.id}
-              className="card overflow-hidden animate-slide-up"
+              onClick={() => navigate(`/admin/courses/${c.id}`)}
+              className="card overflow-hidden animate-slide-up cursor-pointer"
               style={{ opacity: 0, animationDelay: `${i * 0.04}s` }}
             >
               <div className="h-32 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative">
@@ -139,18 +140,15 @@ export default function AdminCourses() {
                 <h3 className="font-semibold text-gray-900 text-sm truncate">{c.title}</h3>
                 <p className="text-xs text-gray-400 mt-1 line-clamp-2">{c.description || 'No description'}</p>
                 <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-100">
-                  <button onClick={() => navigate(`/admin/courses/${c.id}`)} className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer" title="View">
-                    <Eye size={14} />
-                  </button>
-                  <button onClick={() => handleEdit(c)} className="p-1.5 rounded-md text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer" title="Edit">
+                  <button onClick={(e) => { e.stopPropagation(); handleEdit(c); }} className="p-1.5 rounded-md text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer" title="Edit">
                     <Edit size={14} />
                   </button>
                   {c.status === 'DRAFT' && (
-                    <button onClick={() => handlePublish(c.id)} className="p-1.5 rounded-md text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors cursor-pointer" title="Publish">
+                    <button onClick={(e) => { e.stopPropagation(); handlePublish(c.id); }} className="p-1.5 rounded-md text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors cursor-pointer" title="Publish">
                       <Send size={14} />
                     </button>
                   )}
-                  <button onClick={() => { setDeleteId(c.id); setShowConfirm(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors ml-auto cursor-pointer" title="Archive">
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); setShowConfirm(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors ml-auto cursor-pointer" title="Archive">
                     <Trash2 size={14} />
                   </button>
                 </div>

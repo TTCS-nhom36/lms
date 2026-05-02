@@ -88,6 +88,14 @@ export default function InstructorDashboard() {
                   <StatusBadge status={c.status} size="xs" />
                 </div>
                 <p className="text-xs text-gray-400 line-clamp-2">{c.description || 'No description'}</p>
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(`/instructor/courses/${c.id}/assignments`); }}
+                    className="btn-secondary !px-3 !py-2 text-xs"
+                  >
+                    Manage Assignments
+                  </button>
+                </div>
               </div>
             </div>
           ))}

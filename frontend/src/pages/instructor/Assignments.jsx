@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { assignmentApi } from '../../api/assignmentApi';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -13,7 +14,9 @@ export default function Assignments() {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const [assignments, setAssignments] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -24,13 +27,32 @@ export default function Assignments() {
     allowLate: false, maxScore: 100, weight: 1, timeLimitMins: 0,
     shuffleQuestions: false, shuffleOptions: false,
   });
+  const [questionModalOpen, setQuestionModalOpen] = useState(false);
+  const [questionLoading, setQuestionLoading] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const [selectedAssignmentDetails, setSelectedAssignmentDetails] = useState(null);
+  const [questionForm, setQuestionForm] = useState({
+    content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1,
+  });
+  const [questionSaving, setQuestionSaving] = useState(false);
 
   useEffect(() => { loadData(); }, [courseId]);
 
   const loadData = async () => {
-    try { const res = await assignmentApi.getByCourse(courseId); setAssignments(res.data || []); }
-    catch { toast.error('Failed to load assignments'); }
-    finally { setLoading(false); }
+    try {
+      if (!courseId) {
+        toast.error('No course ID available');
+        return;
+      }
+      console.log('Loading assignments for course:', courseId);
+      const res = await assignmentApi.getByCourse(courseId);
+      setAssignments(res.data || []);
+    } catch (error) {
+      console.error('Failed to load assignments:', error);
+      toast.error('Failed to load assignments');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreate = () => {
@@ -47,16 +69,108 @@ export default function Assignments() {
 
   const handleSave = async () => {
     try {
-      const data = { ...form, dueDate: form.dueDate ? form.dueDate + ':00' : null };
-      if (editItem) { await assignmentApi.update(editItem.id, data); toast.success('Assignment updated'); }
-      else { await assignmentApi.create(courseId, data); toast.success('Assignment created'); }
-      setShowModal(false); loadData();
-    } catch { toast.error('Failed to save assignment'); }
+      if (!user || !user.id) {
+        toast.error('User not authenticated');
+        return;
+      }
+      const data = { ...form, dueDate: form.dueDate ? form.dueDate + ':00' : null, createdById: user.id };
+      if (editItem) {
+        if (!editItem.id) {
+          toast.error('Invalid assignment ID');
+          return;
+        }
+        console.log('Updating assignment:', editItem.id, data);
+        await assignmentApi.update(editItem.id, data);
+        toast.success('Assignment updated');
+      } else {
+        if (!courseId) {
+          toast.error('No course selected');
+          return;
+        }
+        console.log('Creating assignment for course:', courseId, data);
+        await assignmentApi.create(courseId, data);
+        toast.success('Assignment created');
+      }
+      setShowModal(false);
+      loadData();
+    } catch (error) {
+      console.error('Failed to save assignment:', error);
+      toast.error('Failed to save assignment');
+    }
+  };
+
+  const openQuestionModal = async (assignment) => {
+    if (!assignment || !assignment.id) {
+      toast.error('Invalid assignment selected');
+      return;
+    }
+    setSelectedAssignment(assignment);
+    setSelectedAssignmentDetails(null);
+    setQuestionLoading(true);
+    try {
+      const res = await assignmentApi.getById(assignment.id);
+      setSelectedAssignmentDetails(res.data);
+    } catch (error) {
+      console.error('Failed to load assignment details:', error);
+      toast.error('Failed to load assignment details');
+      setSelectedAssignmentDetails(assignment);
+    } finally {
+      setQuestionLoading(false);
+      setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1 });
+      setQuestionModalOpen(true);
+    }
+  };
+
+  const handleAddQuestion = async () => {
+    if (!questionForm.content.trim()) {
+      toast.error('Question content is required');
+      return;
+    }
+    if (!selectedAssignment || !selectedAssignment.id) {
+      toast.error('No assignment selected');
+      return;
+    }
+    setQuestionSaving(true);
+    try {
+      const payload = {
+        content: questionForm.content,
+        type: questionForm.type,
+        orderIndex: Number(questionForm.orderIndex),
+        score: Number(questionForm.score),
+      };
+      console.log('Adding question to assignment:', selectedAssignment.id, payload);
+      await assignmentApi.addQuestion(selectedAssignment.id, payload);
+      toast.success('Question added');
+      setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: selectedAssignmentDetails?.questions?.length + 2 || 1, score: 1 });
+      if (selectedAssignmentDetails) {
+        setSelectedAssignmentDetails({
+          ...selectedAssignmentDetails,
+          questions: [...(selectedAssignmentDetails.questions || []), payload],
+        });
+      }
+    } catch (error) {
+      console.error('Failed to add question:', error);
+      toast.error('Failed to add question');
+    } finally {
+      setQuestionSaving(false);
+    }
   };
 
   const handleDelete = async () => {
-    try { await assignmentApi.delete(deleteId); toast.success('Assignment deleted'); setShowConfirm(false); loadData(); }
-    catch { toast.error('Failed to delete'); }
+    if (!deleteId) {
+      toast.error('No assignment selected for deletion');
+      return;
+    }
+    try {
+      console.log('Deleting assignment:', deleteId);
+      await assignmentApi.delete(deleteId);
+      toast.success('Assignment deleted');
+      setShowConfirm(false);
+      loadData();
+    } catch (error) {
+      console.error('Failed to delete assignment:', error);
+      toast.error('Failed to delete');
+    }
   };
 
   if (loading) return <LoadingSpinner text="Loading assignments..." />;
@@ -102,7 +216,10 @@ export default function Assignments() {
                 )}
                 <span>Max: {a.maxScore}</span>
               </div>
-              <div className="flex items-center gap-0.5 pt-2.5 border-t border-gray-100">
+              <div className="flex items-center gap-1 pt-2.5 border-t border-gray-100">
+                <button onClick={() => openQuestionModal(a)} className="px-3 py-1.5 rounded-md text-gray-500 hover:text-green-700 hover:bg-green-50 transition-colors cursor-pointer text-[11px] font-semibold" title="Add Question">
+                  <Plus size={12} className="inline-block mr-1" /> Questions
+                </button>
                 <button onClick={() => navigate(`/instructor/courses/${courseId}/submissions/${a.id}`)} className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer" title="View Submissions">
                   <Eye size={14} />
                 </button>
@@ -154,6 +271,73 @@ export default function Assignments() {
             <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
             <button onClick={handleSave} className="btn-primary">Save</button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={questionModalOpen} onClose={() => setQuestionModalOpen(false)} title={selectedAssignment ? `Questions for ${selectedAssignment.title}` : 'Manage Questions'} size="lg">
+        <div className="space-y-4">
+          {questionLoading ? (
+            <div className="p-6 text-center">
+              <LoadingSpinner text="Loading questions..." />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Add question</h3>
+                  <p className="text-xs text-gray-500">Use the assignment question endpoint to add quiz questions.</p>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Question</label>
+                    <textarea rows={3} value={questionForm.content} onChange={(e) => setQuestionForm({ ...questionForm, content: e.target.value })} placeholder="Write the question content here" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Type</label>
+                      <select value={questionForm.type} onChange={(e) => setQuestionForm({ ...questionForm, type: e.target.value })}>
+                        <option value="SINGLE_CHOICE">Single Choice</option>
+                        <option value="MULTIPLE_CHOICE">Multiple Choice</option>
+                        <option value="TRUE_FALSE">True / False</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Score</label>
+                      <input type="number" min="0" value={questionForm.score} onChange={(e) => setQuestionForm({ ...questionForm, score: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Order</label>
+                      <input type="number" min="1" value={questionForm.orderIndex} onChange={(e) => setQuestionForm({ ...questionForm, orderIndex: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                    <button onClick={() => setQuestionModalOpen(false)} className="btn-secondary">Close</button>
+                    <button onClick={handleAddQuestion} disabled={questionSaving} className="btn-primary">
+                      <Plus size={14} className="inline-block mr-1" /> {questionSaving ? 'Adding...' : 'Add Question'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Existing Questions</h3>
+                {selectedAssignmentDetails?.questions?.length ? (
+                  <div className="space-y-3">
+                    {selectedAssignmentDetails.questions.map((question, index) => (
+                      <div key={index} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
+                          <span>{question.type || 'Question'}</span>
+                          <span>Score: {question.score ?? '—'}</span>
+                        </div>
+                        <p className="text-sm text-gray-700">{question.content || 'No content available'}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">No question data available yet. After adding, questions will appear here if the backend includes them.</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 

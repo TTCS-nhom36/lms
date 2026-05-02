@@ -72,6 +72,12 @@ public class AssignmentService {
     }
 
     public AssignmentResponse create(CreateAssignmentRequest request) {
+        if (request.getCourseId() == null) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Course ID is required");
+        }
+        if (request.getCreatedById() == null) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Created By ID is required");
+        }
         Assignment assignment = assignmentMapper.toEntity(request);
         assignment.setCourse(findCourseById(request.getCourseId()));
         if (request.getLessonId() != null) {
@@ -82,6 +88,9 @@ public class AssignmentService {
     }
 
     public AssignmentResponse createForCourse(Long courseId, CreateAssignmentRequest request) {
+        if (courseId == null) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Course ID is required");
+        }
         request.setCourseId(courseId);
         return create(request);
     }
@@ -100,7 +109,10 @@ public class AssignmentService {
         assignment.setTimeLimitMins(request.getTimeLimitMins());
         assignment.setShuffleQuestions(request.getShuffleQuestions());
         assignment.setShuffleOptions(request.getShuffleOptions());
-        assignment.setCreatedBy(findUserById(request.getCreatedById()));
+        // Keep existing creator if not provided, otherwise update
+        if (request.getCreatedById() != null) {
+            assignment.setCreatedBy(findUserById(request.getCreatedById()));
+        }
         return assignmentMapper.toResponse(assignmentRepository.save(assignment));
     }
 
