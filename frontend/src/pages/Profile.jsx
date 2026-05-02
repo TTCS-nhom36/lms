@@ -6,7 +6,7 @@ import { User, Lock, Save } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 export default function Profile() {
-  const { user, updateUser } = useAuth();
+  const { user, login } = useAuth();
   const toast = useToast();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,7 @@ export default function Profile() {
     try {
       const res = await userApi.updateMe(form);
       setProfile(res.data);
-      updateUser({ fullName: res.data.fullName, avatarUrl: res.data.avatarUrl });
+      login({ ...user, fullName: res.data.fullName, avatarUrl: res.data.avatarUrl });
       toast.success('Profile updated');
     } catch { toast.error('Failed to update profile'); }
     finally { setSaving(false); }

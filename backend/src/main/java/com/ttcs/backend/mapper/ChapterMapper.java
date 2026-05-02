@@ -1,10 +1,11 @@
 package com.ttcs.backend.mapper;
 
+import org.springframework.stereotype.Component;
+
 import com.ttcs.backend.dto.request.CreateChapterRequest;
 import com.ttcs.backend.dto.response.ChapterResponse;
 import com.ttcs.backend.entity.Chapter;
 import com.ttcs.backend.entity.Course;
-import org.springframework.stereotype.Component;
 
 @Component
 public class ChapterMapper {

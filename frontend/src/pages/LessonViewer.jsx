@@ -13,13 +13,22 @@ export default function LessonViewer() {
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [progress, setProgress] = useState({ isCompleted: false, watchDurationSecs: 0 });
 
-  useEffect(() => { loadLesson(); }, [lessonId]);
+  useEffect(() => {
+    setProgress({ isCompleted: false, watchDurationSecs: 0 });
+    loadLesson();
+  }, [lessonId]);
 
   const loadLesson = async () => {
     try {
       const res = await lessonApi.getById(lessonId);
-      setLesson(res.data);
+      const lessonData = res.data;
+      setLesson(lessonData);
+      setProgress({
+        isCompleted: lessonData.isCompleted || false,
+        watchDurationSecs: lessonData.watchDurationSecs || 0,
+      });
     } catch {
       toast.error('Failed to load lesson');
     } finally {
@@ -30,8 +39,12 @@ export default function LessonViewer() {
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      await lessonApi.complete(lessonId);
+      const res = await lessonApi.complete(lessonId);
       toast.success('Lesson completed! 🎉');
+      setProgress({
+        isCompleted: res.data?.isCompleted === true,
+        watchDurationSecs: res.data?.watchDurationSecs || progress.watchDurationSecs || 0,
+      });
     } catch {
       toast.error('Failed to mark as complete');
     } finally {
@@ -110,24 +123,36 @@ export default function LessonViewer() {
       </button>
 
       {/* Lesson Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <StatusBadge status={lesson.contentType} size="sm" />
-            {lesson.isFreePreview && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400">FREE PREVIEW</span>
-            )}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <StatusBadge status={lesson.contentType} size="sm" />
+              {lesson.isFreePreview && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400">FREE PREVIEW</span>
+              )}
+            </div>
+            <h1 className="text-2xl font-bold text-neutral-900">{lesson.title}</h1>
           </div>
-          <h1 className="text-2xl font-bold text-neutral-900">{lesson.title}</h1>
+          <button
+            onClick={handleComplete}
+            disabled={completing || progress.isCompleted}
+            className="btn-primary !bg-gradient-to-r !from-emerald-500 !to-teal-600 hover:!shadow-emerald-500/30"
+          >
+            <CheckCircle size={16} />
+            {progress.isCompleted ? 'Completed' : completing ? 'Completing...' : 'Mark Complete'}
+          </button>
         </div>
-        <button
-          onClick={handleComplete}
-          disabled={completing}
-          className="btn-primary !bg-gradient-to-r !from-emerald-500 !to-teal-600 hover:!shadow-emerald-500/30"
-        >
-          <CheckCircle size={16} />
-          {completing ? 'Completing...' : 'Mark Complete'}
-        </button>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm text-neutral-500">
+            <span>{progress.isCompleted ? '100% completed' : 'Lesson not completed yet'}</span>
+            <span>{progress.watchDurationSecs || 0} sec watched</span>
+          </div>
+          <div className="h-2 rounded-full bg-neutral-200 overflow-hidden">
+            <div className="h-full rounded-full bg-emerald-500 transition-all duration-200" style={{ width: `${progress.isCompleted ? 100 : 0}%` }} />
+          </div>
+        </div>
       </div>
 
       {/* Content */}

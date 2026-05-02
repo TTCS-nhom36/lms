@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
           const res = await userApi.getMe();
           setUser(res.data);
         } catch (error) {
-          console.error('Failed to restore session', error);
+          console.error("Failed to restore session", error);
           localStorage.removeItem('lms_access_token');
           localStorage.removeItem('lms_refresh_token');
         }
@@ -31,7 +31,8 @@ export function AuthProvider({ children }) {
     const { accessToken, refreshToken } = res.data;
     localStorage.setItem('lms_access_token', accessToken);
     localStorage.setItem('lms_refresh_token', refreshToken);
-
+    
+    // Fetch profile
     const profileRes = await userApi.getMe();
     setUser(profileRes.data);
   };
@@ -52,10 +53,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const updateUser = (updated) => {
-    setUser((prev) => ({ ...prev, ...updated }));
-  };
-
   const isAdmin = user?.role === 'ADMIN';
   const isInstructor = user?.role === 'INSTRUCTOR';
   const isStudent = user?.role === 'STUDENT';
@@ -65,7 +62,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, updateUser, isAdmin, isInstructor, isStudent }}>
+    <AuthContext.Provider value={{ user, login, register, logout, isAdmin, isInstructor, isStudent }}>
       {children}
     </AuthContext.Provider>
   );
