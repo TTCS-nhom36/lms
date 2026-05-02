@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { courseApi } from '../../api/courseApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, BookMarked, TrendingUp, Target } from 'lucide-react';
+import { BookOpen, BookMarked, TrendingUp, Target, Award, ArrowRight } from 'lucide-react';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
 
@@ -11,6 +11,8 @@ export default function StudentDashboard() {
   const navigate = useNavigate();
   const [myCourses, setMyCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [gradebookLoading, setGradebookLoading] = useState(true);
+  const [gradebookData, setGradebookData] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -18,8 +20,21 @@ export default function StudentDashboard() {
     try {
       const res = await courseApi.getMyCourses();
       setMyCourses(res.data || []);
+      
+      // Load gradebook data for performance summary
+      if (res.data && res.data.length > 0) {
+        try {
+          const gradebookRes = await courseApi.getGradebook(res.data[0].id);
+          setGradebookData(gradebookRes.data);
+        } catch {
+          setGradebookData(null);
+        }
+      }
     } catch { console.error('Failed to load'); }
-    finally { setLoading(false); }
+    finally { 
+      setLoading(false);
+      setGradebookLoading(false);
+    }
   };
 
   if (loading) return <LoadingSpinner text="Loading dashboard..." />;
@@ -50,6 +65,31 @@ export default function StudentDashboard() {
           </div>
         ))}
       </div>
+
+      {/* Performance Summary Card */}
+      {myCourses.length > 0 && (
+        <div 
+          className="card p-6 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 cursor-pointer hover:shadow-lg transition-shadow"
+          onClick={() => navigate('/student/performance')}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <Award size={20} className="text-purple-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Your Performance</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">Track your grades and progress across all courses</p>
+              <div className="flex items-center gap-2 text-purple-600 font-medium text-sm">
+                View detailed analytics <ArrowRight size={16} />
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Courses</p>
+              <p className="text-3xl font-bold text-purple-900 mt-1">{myCourses.length}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Courses */}
       <div>

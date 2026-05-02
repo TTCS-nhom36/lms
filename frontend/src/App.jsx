@@ -27,6 +27,7 @@ import StudentDashboard from './pages/student/Dashboard';
 import BrowseCourses from './pages/student/BrowseCourses';
 import MyCourses from './pages/student/MyCourses';
 import AssignmentView from './pages/student/AssignmentView';
+import StudentGradebook from './pages/student/StudentGradebook';
 
 function RoleRedirect() {
   const { user } = useAuth();
@@ -46,7 +47,7 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/" element={<RoleRedirect />} />
-
+            
             {/* Shared layout */}
             <Route element={<MainLayout />}>
               <Route path="/profile" element={<Profile />} />
@@ -70,6 +71,7 @@ function App() {
               <Route path="/student/dashboard" element={<StudentDashboard />} />
               <Route path="/student/browse" element={<BrowseCourses />} />
               <Route path="/student/my-courses" element={<MyCourses />} />
+              <Route path="/student/performance" element={<StudentGradebook />} />
               <Route path="/student/courses/:id" element={<CourseDetail />} />
               <Route path="/student/courses/:courseId/lessons/:lessonId" element={<LessonViewer />} />
               <Route path="/student/assignments/:id" element={<AssignmentView />} />
