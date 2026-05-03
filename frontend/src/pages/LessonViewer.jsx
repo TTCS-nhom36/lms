@@ -20,6 +20,23 @@ export default function LessonViewer() {
     loadLesson();
   }, [lessonId]);
 
+
+  const convertYoutubeUrl = (url) => {
+    if (!url) return "";
+
+    if (url.includes("youtube.com/watch?v=")) {
+      const videoId = new URL(url).searchParams.get("v");
+      return `https://www.youtube.com/embed/${videoId}`;
+    }
+
+    if (url.includes("youtu.be/")) {
+      const videoId = url.split("youtu.be/")[1];
+      return `https://www.youtube.com/embed/${videoId}`;
+    }
+
+    return url;
+  };
+
   const loadLesson = async () => {
     try {
       const res = await lessonApi.getById(lessonId);
@@ -61,20 +78,26 @@ export default function LessonViewer() {
         return (
           <div className="aspect-video bg-white rounded-xl overflow-hidden border border-neutral-200">
             {lesson.contentUrl ? (
-              lesson.contentUrl.includes('youtube.com') || lesson.contentUrl.includes('youtu.be') ? (
+              lesson.contentUrl.includes('youtube.com') ||
+              lesson.contentUrl.includes('youtu.be') ? (
                 <iframe
-                  src={lesson.contentUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                  src={convertYoutubeUrl(lesson.contentUrl)}
                   className="w-full h-full"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                   title={lesson.title}
                 />
               ) : (
-                <video src={lesson.contentUrl} controls className="w-full h-full" />
+                <video
+                  src={lesson.contentUrl}
+                  controls
+                  className="w-full h-full"
+                />
               )
             ) : (
               <div className="w-full h-full flex items-center justify-center text-neutral-400">
                 <Video size={48} />
+                <span className="ml-2">No video available</span>
               </div>
             )}
           </div>
@@ -156,6 +179,7 @@ export default function LessonViewer() {
       </div>
 
       {/* Content */}
+      
       {renderContent()}
     </div>
   );
