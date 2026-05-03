@@ -19,6 +19,7 @@ public class SubmissionResponse {
     private Long id;
     private Long assignmentId;
     private UUID userId;
+    //
     private LocalDateTime submittedAt;
     private Boolean isLate;
     private String fileUrl;

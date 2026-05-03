@@ -69,33 +69,44 @@ export default function Assignments() {
 
   const handleSave = async () => {
     try {
-      if (!user || !user.id) {
+      if (!user?.id) {
         toast.error('User not authenticated');
+        console.error('Missing user:', user);
         return;
       }
-      const data = { ...form, dueDate: form.dueDate ? form.dueDate + ':00' : null, createdById: user.id };
+
+      const payload = {
+        ...form,
+        createdById: String(user.id), // đảm bảo luôn là string UUID
+        dueDate: form.dueDate ? form.dueDate + ':00' : null,
+      };
+
+      console.log('FINAL PAYLOAD:', payload);
+
       if (editItem) {
         if (!editItem.id) {
           toast.error('Invalid assignment ID');
           return;
         }
-        console.log('Updating assignment:', editItem.id, data);
-        await assignmentApi.update(editItem.id, data);
+
+        await assignmentApi.update(editItem.id, payload);
         toast.success('Assignment updated');
       } else {
         if (!courseId) {
           toast.error('No course selected');
           return;
         }
-        console.log('Creating assignment for course:', courseId, data);
-        await assignmentApi.create(courseId, data);
+
+        await assignmentApi.create(courseId, payload);
         toast.success('Assignment created');
       }
+
       setShowModal(false);
       loadData();
+
     } catch (error) {
-      console.error('Failed to save assignment:', error);
-      toast.error('Failed to save assignment');
+      console.error('Save assignment error:', error?.response?.data || error);
+      toast.error(error?.response?.data?.message || 'Failed to save assignment');
     }
   };
 

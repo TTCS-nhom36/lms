@@ -38,7 +38,8 @@ public class QuizAttemptService {
     private final QuestionRepository questionRepository;
     private final QuestionOptionRepository questionOptionRepository;
     private final QuizAttemptMapper quizAttemptMapper;
-
+    //
+//
     public QuizAttemptService(
             QuizAttemptRepository quizAttemptRepository,
             SelectedAnswerRepository selectedAnswerRepository,
@@ -46,6 +47,7 @@ public class QuizAttemptService {
             UserRepository userRepository,
             QuestionRepository questionRepository,
             QuestionOptionRepository questionOptionRepository,
+            //QuizAttemptMapper quizAttemptMapper) {
             QuizAttemptMapper quizAttemptMapper) {
         this.quizAttemptRepository = quizAttemptRepository;
         this.selectedAnswerRepository = selectedAnswerRepository;
@@ -54,6 +56,7 @@ public class QuizAttemptService {
         this.questionRepository = questionRepository;
         this.questionOptionRepository = questionOptionRepository;
         this.quizAttemptMapper = quizAttemptMapper;
+        //
     }
 
     public QuizAttemptResponse createAttempt(CreateAttemptRequest request) {
@@ -124,7 +127,7 @@ public class QuizAttemptService {
         double scorePercentage = totalQuestions > 0
                 ? (double) correctAnswers / totalQuestions * 100.0
                 : 0.0;
-
+//
         return SubmitQuizResponse.builder()
                 .attemptId(attempt.getId())
                 .userId(attempt.getUser().getId())
@@ -167,4 +170,14 @@ public class QuizAttemptService {
                 .submittedAt(attempt.getCreatedAt())
                 .build();
     }
+
+    @Transactional(readOnly = true)
+    public SubmitQuizResponse getMyAttempt(Long assignmentId, UUID userId) {
+        QuizAttempt attempt = quizAttemptRepository.findByUserIdAndAssignmentId(userId, assignmentId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "No attempt found for this assignment"));
+        
+        // Return the result of the attempt
+        return getAttemptResult(attempt.getId());
+    }
+//
 }

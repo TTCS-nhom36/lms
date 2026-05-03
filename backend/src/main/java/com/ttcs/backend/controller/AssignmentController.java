@@ -74,7 +74,13 @@ public class AssignmentController {
     public ResponseEntity<List<SubmissionResponse>> getSubmissions(@PathVariable Long id) {
         return ResponseEntity.ok(assignmentService.findSubmissions(id));
     }
+    //
 
+    @GetMapping("/api/lms/assignments/{id}/questions")
+    public ResponseEntity<List<QuestionResponse>> getQuestions(@PathVariable Long id) {
+        return ResponseEntity.ok(assignmentService.findQuestions(id));
+    }
+//
     @GetMapping("/api/lms/assignments/{id}/my-submission")
     public ResponseEntity<SubmissionResponse> getMySubmission(@PathVariable Long id) {
         var userId = currentUserService.getCurrentUserId();

@@ -2,16 +2,22 @@ import { useState, useEffect } from 'react';
 import { courseApi } from '../../api/courseApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Plus, TrendingUp, ClipboardList } from 'lucide-react';
+import { BookOpen, Plus, TrendingUp, ClipboardList, Trash2 } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function InstructorDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [courseToDelete, setCourseToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { loadCourses(); }, []);
 
@@ -20,8 +26,26 @@ export default function InstructorDashboard() {
       const res = await courseApi.getAll({ size: 50 });
       const myCourses = (res.data.items || []).filter((c) => c.createdById === user?.id);
       setCourses(myCourses);
-    } catch { console.error('Failed to load courses'); }
+    } catch { 
+      toast.error('Failed to load courses');
+    }
     finally { setLoading(false); }
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!courseToDelete) return;
+    setDeleting(true);
+    try {
+      await courseApi.delete(courseToDelete.id);
+      toast.success('Course deleted successfully');
+      setCourses(courses.filter(c => c.id !== courseToDelete.id));
+      setShowDeleteConfirm(false);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete course');
+    } finally {
+      setDeleting(false);
+      setCourseToDelete(null);
+    }
   };
 
   if (loading) return <LoadingSpinner text="Loading dashboard..." />;
@@ -88,19 +112,37 @@ export default function InstructorDashboard() {
                   <StatusBadge status={c.status} size="xs" />
                 </div>
                 <p className="text-xs text-gray-400 line-clamp-2">{c.description || 'No description'}</p>
-                <div className="mt-4 flex items-center gap-2">
+                <div className="mt-4 flex items-center justify-between">
                   <button
-                    onClick={(e) => { e.stopPropagation(); navigate(`/instructor/courses/${c.id}/assignments`); }}
-                    className="btn-secondary !px-3 !py-2 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCourseToDelete(c);
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    title="Delete course"
                   >
-                    Manage Assignments
+                    <Trash2 size={16} />
                   </button>
+                  <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                    {c.lessonsCount || 0} Lessons
+                  </span>
                 </div>
               </div>
             </div>
           ))}
         </div>
       )}
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeleteCourse}
+        title="Delete Course"
+        message={`Are you sure you want to delete "${courseToDelete?.title}"? This action cannot be undone and will remove all associated content.`}
+        confirmText={deleting ? "Deleting..." : "Delete"}
+        isDanger={true}
+      />
     </div>
   );
 }

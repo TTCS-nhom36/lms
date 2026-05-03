@@ -20,4 +20,7 @@ public class CreateQuestionRequest {
     private QuestionType type;
     private Integer orderIndex;
     private BigDecimal score;
+    //
+    private java.util.List<QuestionOptionRequest> options;
+    //
 }

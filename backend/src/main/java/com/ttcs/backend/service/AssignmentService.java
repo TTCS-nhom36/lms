@@ -147,6 +147,14 @@ public class AssignmentService {
         return submissionMapper.toResponse(submission);
     }
 
+    @Transactional(readOnly = true)
+    public List<QuestionResponse> findQuestions(Long assignmentId) {
+        return questionRepository.findAll().stream()
+                .filter(question -> question.getAssignment() != null && assignmentId.equals(question.getAssignment().getId()))
+                .map(questionMapper::toResponse)
+                .toList();
+    }
+
     private Assignment findAssignmentEntityById(Long id) {
         return assignmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + id));
