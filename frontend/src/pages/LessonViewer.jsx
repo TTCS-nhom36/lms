@@ -79,7 +79,7 @@ export default function LessonViewer() {
           <div className="aspect-video bg-white rounded-xl overflow-hidden border border-neutral-200">
             {lesson.contentUrl ? (
               lesson.contentUrl.includes('youtube.com') ||
-              lesson.contentUrl.includes('youtu.be') ? (
+                lesson.contentUrl.includes('youtu.be') ? (
                 <iframe
                   src={convertYoutubeUrl(lesson.contentUrl)}
                   className="w-full h-full"
@@ -179,7 +179,7 @@ export default function LessonViewer() {
       </div>
 
       {/* Content */}
-      
+
       {renderContent()}
     </div>
   );

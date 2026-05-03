@@ -84,7 +84,7 @@ export default function CourseDetail() {
     setEditChapter(null);
     setChapterForm({
       title: '',
-      orderIndex: chapters.length + 1 
+      orderIndex: chapters.length + 1
     });
     setShowChapterModal(true);
   };
@@ -100,12 +100,12 @@ export default function CourseDetail() {
 
   const handleSaveChapter = async () => {
     try {
-      
+
       // For now, only send title as backend doesn't support other fields
-      const payload = { 
+      const payload = {
         title: chapterForm.title,
         orderIndex: chapterForm.orderIndex
-       };
+      };
       if (editChapter) {
         await chapterApi.update(editChapter.id, payload);
         toast.success('Chapter updated');
@@ -122,7 +122,8 @@ export default function CourseDetail() {
 
   const handleCreateLesson = (chapterId) => {
     setEditLesson(null);
-    setLessonForm({ title: '', contentType: 'VIDEO', contentUrl: '', contentText: '', isFreePreview: false, chapterId,
+    setLessonForm({
+      title: '', contentType: 'VIDEO', contentUrl: '', contentText: '', isFreePreview: false, chapterId,
     });
     setShowLessonModal(true);
   };
@@ -149,7 +150,7 @@ export default function CourseDetail() {
         contentUrl: lessonForm.contentUrl,
         contentText: lessonForm.contentText,
         isFreePreview: lessonForm.isFreePreview,
-        
+
       };
 
       if (editLesson) {
@@ -330,9 +331,8 @@ export default function CourseDetail() {
                           onClick={() => {
                             if (isStudent) navigate(`/student/courses/${id}/lessons/${ls.id}`);
                           }}
-                          className={`flex items-center gap-3 px-6 py-2.5 transition-colors ${
-                            isStudent ? 'cursor-pointer hover:bg-neutral-100' : ''
-                          }`}
+                          className={`flex items-center gap-3 px-6 py-2.5 transition-colors ${isStudent ? 'cursor-pointer hover:bg-neutral-100' : ''
+                            }`}
                         >
                           <Icon size={14} className="text-neutral-400" />
                           <span className="text-sm text-neutral-700 flex-1">{ls.title}</span>

@@ -21,4 +21,7 @@ public class QuestionResponse {
     private QuestionType type;
     private Integer orderIndex;
     private BigDecimal score;
+    //
+    private java.util.List<QuestionOptionResponse> options;
+//
 }

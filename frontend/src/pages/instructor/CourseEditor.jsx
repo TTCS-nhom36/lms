@@ -1,15 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import {
   Save, PlayCircle, FileText, Upload, Plus,
-  Trash2, Edit, CheckCircle, ChevronLeft, X, ChevronDown, AlertCircle, Users, Eye
+  Trash2, Edit, CheckCircle, ChevronLeft, X, ChevronDown, AlertCircle, Users, Eye,
+  ClipboardList, Calendar, Clock, Star, Download, Search, MessageSquare,
+  Link as LinkIcon, BookOpen, Video, FileCode
 } from 'lucide-react';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import Modal from '../../components/ui/Modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import StatusBadge from '../../components/ui/StatusBadge';
 import { courseApi } from '../../api/courseApi';
 import { chapterApi } from '../../api/chapterApi';
 import { lessonApi } from '../../api/lessonApi';
-import { attemptApi } from '../../api/attemptApi';
+import { assignmentApi } from '../../api/assignmentApi';
+import { submissionApi } from '../../api/submissionApi';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function CourseEditor() {
@@ -17,7 +23,7 @@ export default function CourseEditor() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const isNew = id === 'new';
+  const isNew = !id || id === 'new';
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -39,15 +45,21 @@ export default function CourseEditor() {
   const [selectedChapterId, setSelectedChapterId] = useState(null);
   const [newLessonTitle, setNewLessonTitle] = useState('');
   //
+  //Create Lesson
   const [newLessonContentType, setNewLessonContentType] = useState('TEXT');
   const [lessonTextContent, setLessonTextContent] = useState('');
   const [lessoncontentUrl, setLessoncontentUrl] = useState('');
   const [lessonQuestions, setLessonQuestions] = useState([]);
-  
+
   const [lessonDocumentUrl, setLessonDocumentUrl] = useState('');
   const [lessonLinkUrl, setLessonLinkUrl] = useState('');
   const [lessonNotebookUrl, setLessonNotebookUrl] = useState('');
-  
+  //Editting chapter
+  const [editingChapter, setEditingChapter] = useState(null);
+
+  //Editting lesson
+  const [editingLesson, setEditingLesson] = useState(null);
+
   //
   const resetLessonForm = () => {
     setNewLessonTitle('');
@@ -58,16 +70,53 @@ export default function CourseEditor() {
     setLessonLinkUrl('');
     setLessonNotebookUrl('');
     setSelectedChapterId(null);
+    setEditingLesson(null);
   };
-  // Students state
+  // Students / Gradebook state
   const [students, setStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
-  
+  const [gradebookData, setGradebookData] = useState(null);
+  const [loadingGradebook, setLoadingGradebook] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [showStudentDetail, setShowStudentDetail] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Assignment state
+  const [assignments, setAssignments] = useState([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState(null);
+  const [assignmentForm, setAssignmentForm] = useState({
+    title: '', description: '', type: 'QUIZ', dueDate: '',
+    allowLate: false, maxScore: 100, weight: 1, timeLimitMins: 0,
+    shuffleQuestions: false, shuffleOptions: false,
+  });
+  const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [questionAssignment, setQuestionAssignment] = useState(null);
+  const [questionAssignmentDetails, setQuestionAssignmentDetails] = useState(null);
+  const [questionLoading, setQuestionLoading] = useState(false);
+  const [questionForm, setQuestionForm] = useState({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1 });
+  const [questionSaving, setQuestionSaving] = useState(false);
+  const [showAssignmentDeleteConfirm, setShowAssignmentDeleteConfirm] = useState(false);
+  const [deleteAssignmentId, setDeleteAssignmentId] = useState(null);
+
+  // Delete course state
+  const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
+
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmType, setDeleteConfirmType] = useState(null); // 'chapter' or 'lesson'
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
+
+  //Reorder
+  const moveItem = (arr, from, to) => {
+    const newArr = [...arr];
+    const [removed] = newArr.splice(from, 1);
+    newArr.splice(to, 0, removed);
+    return newArr;
+  };
 
   // Load course data if editing
   const loadCourse = useCallback(async () => {
@@ -80,9 +129,11 @@ export default function CourseEditor() {
         thumbnailUrl: res.data.thumbnailUrl || '',
         status: res.data.status || 'DRAFT'
       });
-      // Load chapters and students for this course
+      // Load chapters, students, assignments, gradebook for this course
       loadChapters(id);
       loadStudents(id);
+      loadAssignments(id);
+      loadGradebook(id);
     } catch (error) {
       console.error('Failed to load course:', error);
       toast.error('Failed to load course');
@@ -139,11 +190,59 @@ export default function CourseEditor() {
       setStudents(res.data || []);
     } catch (error) {
       console.error('Failed to load students:', error);
-      // Don't show error toast for students, it's optional
     } finally {
       setLoadingStudents(false);
     }
   }, []);
+
+  // Load gradebook data
+  const loadGradebook = useCallback(async (courseId) => {
+    setLoadingGradebook(true);
+    try {
+      const res = await courseApi.getGradebook(courseId);
+      setGradebookData(res.data);
+    } catch (error) {
+      console.error('Failed to load gradebook:', error);
+    } finally {
+      setLoadingGradebook(false);
+    }
+  }, []);
+
+  // Load assignments
+  const loadAssignments = useCallback(async (courseId) => {
+    setLoadingAssignments(true);
+    try {
+      const res = await assignmentApi.getByCourse(courseId);
+      setAssignments(res.data || []);
+    } catch (error) {
+      console.error('Failed to load assignments:', error);
+      toast.error('Failed to load assignments');
+    } finally {
+      setLoadingAssignments(false);
+    }
+  }, [toast]);
+
+  // Filtered gradebook entries
+  const filteredGradebook = useMemo(() => {
+    if (!gradebookData?.entries) return [];
+    return gradebookData.entries.filter(e =>
+      e.fullName?.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      e.email?.toLowerCase().includes(studentSearch.toLowerCase())
+    );
+  }, [gradebookData, studentSearch]);
+
+  const formatScore = (score) => {
+    if (score == null) return '—';
+    const n = Number(score);
+    return isNaN(n) ? '—' : n.toFixed(1);
+  };
+  const getScoreColor = (score) => {
+    if (score == null) return 'text-[#86868b]';
+    const n = Number(score);
+    if (n >= 8) return 'text-[#34C759]';
+    if (n >= 5) return 'text-[#FF9500]';
+    return 'text-[#FF3B30]';
+  };
 
   // Create new chapter
   const handleCreateChapter = async () => {
@@ -200,42 +299,35 @@ export default function CourseEditor() {
       setSaving(false);
     }
   };
+  //Reorder chapter
+  const handleMoveChapter = async (index, direction) => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+
+    if (newIndex < 0 || newIndex >= chapters.length) return;
+
+    const reordered = moveItem(chapters, index, newIndex);
+
+    const updated = reordered.map((c, i) => ({
+      ...c,
+      orderIndex: i
+    }));
+
+    setChapters(updated);
+
+    try {
+      await chapterApi.reorder({
+        chapterIds: updated.map(c => c.id)
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error("Reorder failed");
+    }
+  };
 
   // Create new lesson
-  const handleCreateLesson = async () => {
+  const handleSaveLesson = async () => {
     if (!newLessonTitle.trim()) {
       toast.error("Lesson title is required");
-      return;
-    }
-
-    if (
-      newLessonContentType === "VIDEO" &&
-      !lessoncontentUrl.trim()
-    ) {
-      toast.error("Video URL is required");
-      return;
-    }
-    if (
-      newLessonContentType === "DOCUMENT" &&
-      !lessonDocumentUrl.trim()
-    ) {
-      toast.error("Document URL is required");
-      return;
-    }
-
-    if (
-      newLessonContentType === "LINK" &&
-      !lessonLinkUrl.trim()
-    ) {
-      toast.error("Link URL is required");
-      return;
-    }
-
-    if (
-      newLessonContentType === "NOTEBOOK" &&
-      !lessonNotebookUrl.trim()
-    ) {
-      toast.error("Notebook URL is required");
       return;
     }
 
@@ -243,7 +335,7 @@ export default function CourseEditor() {
 
     try {
       const currentChapter = chapters.find(
-        (ch) => ch.id === selectedChapterId
+        ch => ch.id === selectedChapterId
       );
 
       const lessonCount =
@@ -251,16 +343,17 @@ export default function CourseEditor() {
 
       let formattedcontentUrl = null;
 
-      // chuẩn hóa giống admin
       if (newLessonContentType === "VIDEO") {
         const url = lessoncontentUrl.trim();
 
         if (url.includes("youtube.com/watch?v=")) {
           const videoId = new URL(url).searchParams.get("v");
-          formattedcontentUrl = `https://www.youtube.com/embed/${videoId}`;
+          formattedcontentUrl =
+            `https://www.youtube.com/embed/${videoId}`;
         } else if (url.includes("youtu.be/")) {
           const videoId = url.split("youtu.be/")[1];
-          formattedcontentUrl = `https://www.youtube.com/embed/${videoId}`;
+          formattedcontentUrl =
+            `https://www.youtube.com/embed/${videoId}`;
         } else {
           formattedcontentUrl = url;
         }
@@ -269,7 +362,9 @@ export default function CourseEditor() {
       const payload = {
         title: newLessonTitle,
         chapterId: selectedChapterId,
-        orderIndex: lessonCount,
+        orderIndex: editingLesson
+          ? editingLesson.orderIndex
+          : lessonCount,
 
         contentType: newLessonContentType,
 
@@ -282,36 +377,36 @@ export default function CourseEditor() {
           newLessonContentType === "VIDEO"
             ? formattedcontentUrl
             : newLessonContentType === "DOCUMENT"
-            ? lessonDocumentUrl
-            : newLessonContentType === "LINK"
-            ? lessonLinkUrl
-            : newLessonContentType === "NOTEBOOK"
-            ? lessonNotebookUrl
-            : null,
+              ? lessonDocumentUrl
+              : newLessonContentType === "LINK"
+                ? lessonLinkUrl
+                : newLessonContentType === "NOTEBOOK"
+                  ? lessonNotebookUrl
+                  : null,
 
         unlockConditionId: null,
         isFreePreview: false
       };
 
-      console.log("Sending lesson payload:", payload);
+      if (editingLesson) {
+        await lessonApi.update(editingLesson.id, payload);
+        toast.success("Lesson updated successfully");
+      } else {
+        await lessonApi.create(selectedChapterId, payload);
+        toast.success("Lesson created successfully");
+      }
 
-      await lessonApi.create(selectedChapterId, payload);
-
-      // reload lại data chuẩn từ backend
       await loadChapters(id);
-
-      toast.success("Lesson created successfully");
 
       resetLessonForm();
       setShowLessonModal(false);
-    } catch (error) {
-      console.error("Create lesson error:", error);
 
+    } catch (error) {
+      console.error(error);
       toast.error(
         error.response?.data?.message ||
-        "Failed to create lesson"
+        "Failed to save lesson"
       );
-
     } finally {
       setSaving(false);
     }
@@ -358,6 +453,33 @@ export default function CourseEditor() {
   // Open lesson modal
   const openLessonModal = (chapterId) => {
     setSelectedChapterId(chapterId);
+    setShowLessonModal(true);
+  };
+  //
+  const openEditLessonModal = (lesson, chapterId) => {
+    setEditingLesson(lesson);
+    setSelectedChapterId(chapterId);
+
+    setNewLessonTitle(lesson.title || "");
+    setNewLessonContentType(lesson.contentType || "TEXT");
+    setLessonTextContent(lesson.contentText || "");
+
+    if (lesson.contentType === "VIDEO") {
+      setLessoncontentUrl(lesson.contentUrl || "");
+    }
+
+    if (lesson.contentType === "DOCUMENT") {
+      setLessonDocumentUrl(lesson.contentUrl || "");
+    }
+
+    if (lesson.contentType === "LINK") {
+      setLessonLinkUrl(lesson.contentUrl || "");
+    }
+
+    if (lesson.contentType === "NOTEBOOK") {
+      setLessonNotebookUrl(lesson.contentUrl || "");
+    }
+
     setShowLessonModal(true);
   };
 
@@ -416,6 +538,98 @@ export default function CourseEditor() {
     }
   }, [id, isNew, loadCourse]);
 
+
+
+  // === Assignment handlers ===
+  const handleCreateAssignment = () => {
+    setEditingAssignment(null);
+    setAssignmentForm({ title: '', description: '', type: 'QUIZ', dueDate: '', allowLate: false, maxScore: 100, weight: 1, timeLimitMins: 0, shuffleQuestions: false, shuffleOptions: false });
+    setShowAssignmentModal(true);
+  };
+  const handleEditAssignment = (a) => {
+    setEditingAssignment(a);
+    setAssignmentForm({ title: a.title || '', description: a.description || '', type: a.type, dueDate: a.dueDate ? a.dueDate.substring(0, 16) : '', allowLate: a.allowLate || false, maxScore: a.maxScore || 100, weight: a.weight || 1, timeLimitMins: a.timeLimitMins || 0, shuffleQuestions: a.shuffleQuestions || false, shuffleOptions: a.shuffleOptions || false });
+    setShowAssignmentModal(true);
+  };
+  const handleSaveAssignment = async () => {
+    if (!assignmentForm.title.trim()) { toast.error('Title is required'); return; }
+    setSaving(true);
+    try {
+      const payload = { ...assignmentForm, createdById: String(user.id), dueDate: assignmentForm.dueDate ? assignmentForm.dueDate + ':00' : null };
+      if (editingAssignment) {
+        await assignmentApi.update(editingAssignment.id, payload);
+        toast.success('Assignment updated');
+      } else {
+        await assignmentApi.create(id, payload);
+        toast.success('Assignment created');
+      }
+      setShowAssignmentModal(false);
+      loadAssignments(id);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Failed to save assignment');
+    } finally { setSaving(false); }
+  };
+  const handleDeleteAssignment = async () => {
+    if (!deleteAssignmentId) return;
+    setSaving(true);
+    try {
+      await assignmentApi.delete(deleteAssignmentId);
+      toast.success('Assignment deleted');
+      setShowAssignmentDeleteConfirm(false);
+      loadAssignments(id);
+    } catch (error) { toast.error('Failed to delete'); }
+    finally { setSaving(false); }
+  };
+  const openQuestionModal = async (assignment) => {
+    setQuestionAssignment(assignment);
+    setQuestionAssignmentDetails(null);
+    setQuestionLoading(true);
+    try {
+      const res = await assignmentApi.getById(assignment.id);
+      setQuestionAssignmentDetails(res.data);
+    } catch { setQuestionAssignmentDetails(assignment); }
+    finally { setQuestionLoading(false); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); setShowQuestionModal(true); }
+  };
+  const handleAddQuestion = async () => {
+    if (!questionForm.content.trim()) { toast.error('Question content is required'); return; }
+    if (questionForm.options.length < 2) { toast.error('At least 2 options are required'); return; }
+    if (questionForm.options.some(o => !o.content.trim())) { toast.error('Option content cannot be empty'); return; }
+    if (!questionForm.options.some(o => o.isCorrect)) { toast.error('Please select at least one correct option'); return; }
+
+    setQuestionSaving(true);
+    try {
+      await assignmentApi.addQuestion(questionAssignment.id, { 
+        content: questionForm.content, 
+        type: questionForm.type, 
+        orderIndex: Number(questionForm.orderIndex), 
+        score: Number(questionForm.score),
+        options: questionForm.options.map((opt, idx) => ({ content: opt.content, isCorrect: opt.isCorrect, orderIndex: idx + 1 }))
+      });
+      toast.success('Question added');
+      setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: (questionAssignmentDetails?.questions?.length || 0) + 2, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] });
+      const res = await assignmentApi.getById(questionAssignment.id);
+      setQuestionAssignmentDetails(res.data);
+    } catch { toast.error('Failed to add question'); }
+    finally { setQuestionSaving(false); }
+  };
+  // === Gradebook handlers ===
+  const handleExportGradebook = async () => {
+    setExporting(true);
+    try {
+      const res = await courseApi.exportGradebook(id);
+      const url = window.URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `gradebook-course-${id}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Gradebook exported');
+    } catch { toast.error('Failed to export'); }
+    finally { setExporting(false); }
+  };
+
   const handleSave = async () => {
     if (!course.title.trim()) {
       toast.error('Course title is required');
@@ -438,10 +652,14 @@ export default function CourseEditor() {
         createdById: user.id
       };
 
-      await courseApi.create(payload);
-      toast.success('Course created successfully');
-
-      navigate('/instructor/courses');
+      if (isNew) {
+        await courseApi.create(payload);
+        toast.success('Course created successfully');
+        navigate('/instructor/courses');
+      } else {
+        await courseApi.update(id, payload);
+        toast.success('Course updated successfully');
+      }
     } catch (error) {
       console.error('Save error:', error);
       const message = error.response?.data?.message || 'Failed to save course';
@@ -471,14 +689,35 @@ export default function CourseEditor() {
     }
   };
 
+  const handleDeleteCourse = async () => {
+    setSaving(true);
+    try {
+      await courseApi.delete(id);
+      toast.success('Course deleted successfully');
+      navigate('/instructor/courses');
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete course');
+    } finally {
+      setSaving(false);
+      setShowDeleteCourseConfirm(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner text="Loading course..." />;
 
   const tabs = [
     { id: 'settings', label: 'Primary Settings' },
     { id: 'curriculum', label: 'Curriculum Model' },
-    { id: 'media', label: 'Media & Covers' },
+    { id: 'assignments', label: 'Assignments' },
     { id: 'students', label: 'Students' },
   ];
+
+  const contentTypeIcon = (type) => {
+    const icons = { TEXT: FileText, VIDEO: Video, DOCUMENT: FileCode, LINK: LinkIcon, NOTEBOOK: BookOpen };
+    const Icon = icons[type] || FileText;
+    return <Icon size={14} />;
+  };
 
   return (
     <div className="max-w-[1024px] mx-auto space-y-8 pb-32 animate-fade-in">
@@ -494,6 +733,15 @@ export default function CourseEditor() {
           </div>
         </div>
         <div className="flex gap-3">
+          {!isNew && (
+            <button 
+              onClick={() => setShowDeleteCourseConfirm(true)} 
+              disabled={saving} 
+              className="btn-secondary !text-[#ff3b30] hover:!bg-[#ff3b30]/10 border-[#ff3b30]/30 disabled:opacity-50"
+            >
+              Delete Course
+            </button>
+          )}
           <button onClick={() => navigate('/instructor/courses')} disabled={saving} className="btn-secondary !text-[#1d1d1f] disabled:opacity-50">Discard</button>
           <button onClick={handleSave} disabled={saving} className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
             <Save size={16} /> {saving ? 'Saving...' : 'Apply Changes'}
@@ -507,9 +755,8 @@ export default function CourseEditor() {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-6 py-2.5 rounded-full text-[14px] font-medium transition-all ${
-              activeTab === t.id ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-            }`}
+            className={`px-6 py-2.5 rounded-full text-[14px] font-medium transition-all ${activeTab === t.id ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+              }`}
           >
             {t.label}
           </button>
@@ -553,9 +800,9 @@ export default function CourseEditor() {
                 <CheckCircle size={32} className="text-[#0071e3] mb-4" />
                 <h4 className="body-emphasis text-[#1d1d1f] mb-2">Ready to Deploy</h4>
                 <p className="micro-ui text-[#6e6e73] mb-4">Once correctly configured, you can shift state to published.</p>
-                <button 
-                  onClick={handlePublish} 
-                  disabled={saving || isNew || course.status === 'PUBLISHED'} 
+                <button
+                  onClick={handlePublish}
+                  disabled={saving || isNew || course.status === 'PUBLISHED'}
                   className="btn-primary w-full shadow-md shadow-[#0071e3]/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   title={isNew ? 'Save course first' : course.status === 'PUBLISHED' ? 'Already published' : ''}
                 >
@@ -570,7 +817,7 @@ export default function CourseEditor() {
           <div className="animate-slide-up space-y-8">
             <div className="flex items-center justify-between">
               <h3 className="utility-heading text-[#1d1d1f]">Curriculum Architecture</h3>
-              <button 
+              <button
                 onClick={() => setShowChapterModal(true)}
                 disabled={saving || isNew}
                 className="btn-primary !bg-[#f5f5f7] !text-[#1d1d1f] hover:!bg-[#e5e5ea] disabled:opacity-50"
@@ -579,7 +826,7 @@ export default function CourseEditor() {
                 <Plus size={16} /> Add Chapter
               </button>
             </div>
-            
+
             {loadingChapters ? (
               <LoadingSpinner text="Loading chapters..." />
             ) : chapters.length === 0 ? (
@@ -587,7 +834,7 @@ export default function CourseEditor() {
                 <FileText size={40} className="mx-auto text-[#86868b] mb-4" />
                 <h4 className="body-emphasis text-[#1d1d1f]">No Chapters Yet</h4>
                 <p className="body-primary text-[#6e6e73] max-w-sm mx-auto mb-6">Build your first chapter to begin organizing your course content.</p>
-                <button 
+                <button
                   onClick={() => setShowChapterModal(true)}
                   disabled={isNew}
                   className="btn-primary disabled:opacity-50"
@@ -598,16 +845,16 @@ export default function CourseEditor() {
               </div>
             ) : (
               <div className="space-y-3">
-                {chapters.map((chapter) => (
+                {chapters.map((chapter, index) => (
                   <div key={chapter.id} className="apple-card p-6 border-l-4 border-[#0071e3]">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-4 flex-1">
-                        <button 
+                        <button
                           onClick={() => toggleChapterExpanded(chapter.id)}
                           className="text-[#0071e3] hover:text-[#0077ed] transition-colors"
                         >
-                          <ChevronDown 
-                            size={20} 
+                          <ChevronDown
+                            size={20}
                             className={`transition-transform ${expandedChapters[chapter.id] ? 'rotate-180' : ''}`}
                           />
                         </button>
@@ -617,14 +864,33 @@ export default function CourseEditor() {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button 
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleMoveChapter(index, 'up')}
+                            disabled={index === 0}
+                            className="p-2 text-[#0071e3] disabled:opacity-30"
+                            title="Move Up"
+                          >
+                            ↑
+                          </button>
+
+                          <button
+                            onClick={() => handleMoveChapter(index, 'down')}
+                            disabled={index === chapters.length - 1}
+                            className="p-2 text-[#0071e3] disabled:opacity-30"
+                            title="Move Down"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                        <button
                           onClick={() => openLessonModal(chapter.id)}
                           className="p-2 hover:bg-[#f5f5f7] rounded-lg transition-colors text-[#0071e3] hover:text-[#0077ed]"
                           title="Add lesson"
                         >
                           <Plus size={18} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDeleteChapter(chapter.id)}
                           disabled={saving}
                           className="p-2 hover:bg-[#f5f5f7] rounded-lg transition-colors text-[#ff3b30] hover:text-[#ff453a] disabled:opacity-50"
@@ -640,17 +906,30 @@ export default function CourseEditor() {
                         {chapter.lessons && chapter.lessons.length > 0 ? (
                           chapter.lessons.map((lesson) => (
                             <div key={lesson.id} className="flex items-center justify-between p-3 bg-[#f5f5f7] rounded-lg">
-                              <div>
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white border border-[#d2d2d7] text-[#6e6e73] text-[10px] font-semibold uppercase">
+                                  {contentTypeIcon(lesson.contentType)} {lesson.contentType || 'TEXT'}
+                                </span>
                                 <p className="body-primary text-[#1d1d1f]">{lesson.title}</p>
                               </div>
-                              <button 
-                                onClick={() => handleDeleteLesson(lesson.id, chapter.id)}
-                                disabled={saving}
-                                className="p-1 hover:bg-white rounded transition-colors text-[#ff3b30] hover:text-[#ff453a] disabled:opacity-50"
-                                title="Delete lesson"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => openEditLessonModal(lesson, chapter.id)}
+                                  disabled={saving}
+                                  className="p-1 hover:bg-white rounded transition-colors text-[#0071e3] disabled:opacity-50"
+                                  title="Edit lesson"
+                                >
+                                  <Edit size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteLesson(lesson.id, chapter.id)}
+                                  disabled={saving}
+                                  className="p-1 hover:bg-white rounded transition-colors text-[#ff3b30] hover:text-[#ff453a] disabled:opacity-50"
+                                  title="Delete lesson"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </div>
                           ))
                         ) : (
@@ -665,82 +944,128 @@ export default function CourseEditor() {
           </div>
         )}
 
-        {activeTab === 'media' && (
+        {activeTab === 'assignments' && (
           <div className="animate-slide-up space-y-8">
-            <h3 className="utility-heading text-[#1d1d1f]">Media & Presentation</h3>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <label className="control-label block text-[#6e6e73]">Store Thumbnail Cover</label>
-                <div className="aspect-video bg-[#f5f5f7] border-2 border-dashed border-[#d2d2d7] rounded-[18px] flex flex-col items-center justify-center text-center p-6 group hover:border-[#0071e3] transition-colors cursor-pointer text-[#86868b] hover:text-[#0071e3]">
-                  <Upload size={32} className="mb-4" />
-                  <div className="body-emphasis mb-1">Click to browse or drag and drop</div>
-                  <div className="micro-ui text-[#86868b]">1920x1080 JPEG or PNG (Max 5MB)</div>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <label className="control-label block text-[#6e6e73]">Introductory Video Reel</label>
-                <div className="aspect-video bg-[#f5f5f7] border-2 border-dashed border-[#d2d2d7] rounded-[18px] flex flex-col items-center justify-center text-center p-6 group hover:border-[#0071e3] transition-colors cursor-pointer text-[#86868b] hover:text-[#0071e3]">
-                  <PlayCircle size={32} className="mb-4" />
-                  <div className="body-emphasis mb-1">Select video reel</div>
-                  <div className="micro-ui text-[#86868b]">MP4 or WebM (Max 50MB)</div>
-                </div>
-              </div>
+            <div className="flex items-center justify-between">
+              <h3 className="utility-heading text-[#1d1d1f]">Assignments</h3>
+              <button onClick={handleCreateAssignment} disabled={saving || isNew} className="btn-primary !bg-[#f5f5f7] !text-[#1d1d1f] hover:!bg-[#e5e5ea] disabled:opacity-50">
+                <Plus size={16} /> New Assignment
+              </button>
             </div>
+
+            {loadingAssignments ? (
+              <LoadingSpinner text="Loading assignments..." />
+            ) : assignments.length === 0 ? (
+              <div className="apple-card p-12 text-center border-dashed border-2 border-[#d2d2d7]">
+                <ClipboardList size={40} className="mx-auto text-[#86868b] mb-4" />
+                <h4 className="body-emphasis text-[#1d1d1f]">No Assignments Yet</h4>
+                <p className="body-primary text-[#6e6e73] max-w-sm mx-auto mb-6">Create your first assignment for this course.</p>
+                <button onClick={handleCreateAssignment} disabled={isNew} className="btn-primary disabled:opacity-50"><Plus size={16} /> Create Assignment</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {assignments.map((a, i) => (
+                  <div key={a.id} className="apple-card p-5 animate-slide-up" style={{ animationDelay: `${i * 0.04}s` }}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="body-emphasis text-[#1d1d1f] truncate">{a.title}</h4>
+                        <p className="micro-ui text-[#86868b] mt-0.5 line-clamp-2">{a.description || 'No description'}</p>
+                      </div>
+                      <StatusBadge status={a.type} size="xs" />
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-[#86868b] mb-3">
+                      {a.dueDate && <span className="flex items-center gap-1"><Calendar size={11} /> {new Date(a.dueDate).toLocaleDateString()}</span>}
+                      {a.timeLimitMins > 0 && <span className="flex items-center gap-1"><Clock size={11} /> {a.timeLimitMins} min</span>}
+                      <span>Max: {a.maxScore}</span>
+                    </div>
+                    <div className="flex items-center gap-1 pt-3 border-t border-[#f5f5f7]">
+                      <button onClick={() => openQuestionModal(a)} className="px-3 py-1.5 rounded-lg text-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-[11px] font-semibold">
+                        <Plus size={12} className="inline-block mr-1" /> Questions
+                      </button>
+                      <button onClick={() => navigate(`/instructor/courses/${id}/submissions/${a.id}`)} className="px-3 py-1.5 rounded-lg text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors text-[11px] font-semibold flex items-center gap-1" title="View Submissions">
+                        <Eye size={12} /> View Submissions
+                      </button>
+                      <button onClick={() => handleEditAssignment(a)} className="p-1.5 rounded-lg text-[#86868b] hover:text-[#FF9500] hover:bg-[#FF9500]/5 transition-colors" title="Edit">
+                        <Edit size={14} />
+                      </button>
+                      <button onClick={() => { setDeleteAssignmentId(a.id); setShowAssignmentDeleteConfirm(true); }} className="p-1.5 rounded-lg text-[#86868b] hover:text-[#ff3b30] hover:bg-[#ff3b30]/5 transition-colors ml-auto" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {activeTab === 'students' && (
           <div className="animate-slide-up space-y-8">
             <div className="flex items-center justify-between">
-              <h3 className="utility-heading text-[#1d1d1f]">Enrolled Students</h3>
-              <span className="px-3 py-1 rounded-[6px] bg-[#f5f5f7] border border-[#d2d2d7] text-[11px] font-semibold text-[#6e6e73] uppercase tracking-widest">
-                {students.length} students
-              </span>
+              <div>
+                <h3 className="utility-heading text-[#1d1d1f]">Enrolled Students & Gradebook</h3>
+                <p className="micro-ui text-[#86868b] mt-1">{gradebookData?.entries?.length || 0} students</p>
+              </div>
+              <button onClick={handleExportGradebook} disabled={exporting || !gradebookData?.entries?.length} className="btn-primary !bg-[#f5f5f7] !text-[#1d1d1f] hover:!bg-[#e5e5ea] disabled:opacity-50">
+                <Download size={14} /> {exporting ? 'Exporting...' : 'Export Excel'}
+              </button>
             </div>
 
-            {loadingStudents ? (
-              <LoadingSpinner text="Loading students..." />
-            ) : students.length === 0 ? (
+            {/* Search */}
+            <div className="apple-card p-4">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-3 text-[#86868b]" />
+                <input type="text" placeholder="Search by name or email..." value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="w-full !pl-10" />
+              </div>
+            </div>
+
+            {loadingGradebook ? (
+              <LoadingSpinner text="Loading gradebook..." />
+            ) : !gradebookData?.entries?.length ? (
               <div className="apple-card p-12 text-center border-dashed border-2 border-[#d2d2d7]">
                 <Users size={40} className="mx-auto text-[#86868b] mb-4" />
                 <h4 className="body-emphasis text-[#1d1d1f]">No Students Yet</h4>
                 <p className="body-primary text-[#6e6e73] max-w-sm mx-auto">Students will appear here once they enroll in your course.</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="apple-card overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-[#f5f5f7] border-b border-[#d2d2d7]">
                       <tr>
-                        <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Name</th>
+                        <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Student</th>
                         <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Email</th>
                         <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Status</th>
+                        <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Submitted</th>
                         <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Progress</th>
+                        <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Avg Score</th>
+                        <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#6e6e73] uppercase tracking-wide">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#d2d2d7]">
-                      {students.map((student) => (
-                        <tr key={student.id} className="hover:bg-[#f5f5f7] transition-colors">
-                          <td className="px-4 py-3 body-primary text-[#1d1d1f]">{student.fullName || 'N/A'}</td>
-                          <td className="px-4 py-3 body-primary text-[#6e6e73]">{student.email || 'N/A'}</td>
+                      {filteredGradebook.map((e) => (
+                        <tr key={e.userId} className="hover:bg-[#f5f5f7] transition-colors">
+                          <td className="px-4 py-3 body-primary text-[#1d1d1f] font-medium">{e.fullName}</td>
+                          <td className="px-4 py-3 body-primary text-[#6e6e73]">{e.email}</td>
+                          <td className="px-4 py-3"><StatusBadge status={e.enrollmentStatus} size="xs" /></td>
+                          <td className="px-4 py-3 text-center text-[#1d1d1f] font-medium">{e.submittedAssignments}/{e.totalAssignments}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-block px-2.5 py-1 rounded-[6px] text-[11px] font-semibold ${
-                              student.enrollmentStatus === 'ACTIVE' 
-                                ? 'bg-[#34C759]/10 text-[#34C759]' 
-                                : 'bg-[#FF3B30]/10 text-[#FF3B30]'
-                            }`}>
-                              {student.enrollmentStatus || 'UNKNOWN'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-1.5 bg-[#d2d2d7] rounded-full overflow-hidden">
+                                <div className="h-full bg-[#0071e3] rounded-full transition-all" style={{ width: e.totalAssignments > 0 ? `${(e.submittedAssignments / e.totalAssignments) * 100}%` : '0%' }} />
+                              </div>
+                              <span className="text-[10px] text-[#86868b] w-8">{e.totalAssignments > 0 ? `${Math.round((e.submittedAssignments / e.totalAssignments) * 100)}%` : '0%'}</span>
+                            </div>
                           </td>
+                          <td className="px-4 py-3 text-center"><span className={`font-semibold ${getScoreColor(e.averageScore)}`}>{formatScore(e.averageScore)}</span></td>
                           <td className="px-4 py-3 text-center">
-                            <span className="text-[#6e6e73] text-xs">
-                              {student.completedLessons ? `${student.completedLessons} lessons` : '0 lessons'}
-                            </span>
+                            <button onClick={() => { setSelectedStudent(e); setShowStudentDetail(true); }} className="text-[#0071e3] hover:text-[#0077ed] text-xs font-medium">Details</button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  {filteredGradebook.length === 0 && <div className="px-6 py-8 text-center"><p className="text-[#86868b] text-sm">No students found matching your search.</p></div>}
                 </div>
               </div>
             )}
@@ -754,7 +1079,7 @@ export default function CourseEditor() {
           <div className="bg-white rounded-[18px] shadow-xl max-w-md w-full p-8 animate-slide-up">
             <div className="flex items-center justify-between mb-6">
               <h3 className="utility-heading text-[#1d1d1f]">Create Chapter</h3>
-              <button 
+              <button
                 onClick={() => {
                   setShowChapterModal(false);
                   setNewChapterTitle('');
@@ -764,13 +1089,13 @@ export default function CourseEditor() {
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="space-y-4 mb-6">
               <div>
                 <label className="control-label block mb-2 text-[#6e6e73]">Chapter Title *</label>
-                <input 
-                  type="text" 
-                  value={newChapterTitle} 
+                <input
+                  type="text"
+                  value={newChapterTitle}
                   onChange={(e) => setNewChapterTitle(e.target.value)}
                   placeholder="e.g., Chapter 1: Introduction"
                   className="w-full"
@@ -780,7 +1105,7 @@ export default function CourseEditor() {
             </div>
 
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => {
                   setShowChapterModal(false);
                   setNewChapterTitle('');
@@ -790,12 +1115,12 @@ export default function CourseEditor() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleCreateChapter}
                 disabled={saving || !newChapterTitle.trim()}
                 className="btn-primary flex-1 disabled:opacity-50"
               >
-                {saving ? 'Creating...' : 'Create'}
+                {saving ? 'Saving...' : editingChapter ? 'Update' : 'Create'}
               </button>
             </div>
           </div>
@@ -808,9 +1133,8 @@ export default function CourseEditor() {
           <div className="bg-white rounded-[18px] shadow-xl max-w-md w-full p-8 animate-slide-up">
             <div className="flex items-center justify-between mb-6">
               <h3 className="utility-heading text-[#1d1d1f]">Create Lesson</h3>
-              <button 
+              <button
                 onClick={() => {
-                  setShowLessonModal(false);
                   setShowLessonModal(false);
                   resetLessonForm();
                 }}
@@ -819,7 +1143,7 @@ export default function CourseEditor() {
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="space-y-4 mb-6">
               <div>
                 <label className="control-label block mb-2 text-[#6e6e73]">Chapter</label>
@@ -829,19 +1153,19 @@ export default function CourseEditor() {
               </div>
               <div>
                 <label className="control-label block mb-2 text-[#6e6e73]">Lesson Title *</label>
-                <input 
-                  type="text" 
-                  value={newLessonTitle} 
+                <input
+                  type="text"
+                  value={newLessonTitle}
                   onChange={(e) => setNewLessonTitle(e.target.value)}
                   placeholder="e.g., Lesson 1: Getting Started"
                   className="w-full"
-                  onKeyPress={(e) => e.key === 'Enter' && handleCreateLesson()}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSaveLesson()}
                 />
               </div>
               <div>
                 <label className="control-label block mb-2 text-[#6e6e73]">Content Type *</label>
-                <select 
-                  value={newLessonContentType} 
+                <select
+                  value={newLessonContentType}
                   onChange={(e) => setNewLessonContentType(e.target.value)}
                   className="w-full"
                 >
@@ -851,7 +1175,7 @@ export default function CourseEditor() {
                   <option value="LINK">Link</option>
                   <option value="NOTEBOOK">Notebook</option>
                 </select>
-              </div>  
+              </div>
               {/* TEXT */}
               {newLessonContentType === 'TEXT' && (
                 <div>
@@ -936,11 +1260,11 @@ export default function CourseEditor() {
                   />
                 </div>
               )}
-                
+
             </div>
 
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => {
                   setShowLessonModal(false);
                   resetLessonForm();
@@ -950,8 +1274,8 @@ export default function CourseEditor() {
               >
                 Cancel
               </button>
-              <button 
-                onClick={handleCreateLesson}
+              <button
+                onClick={handleSaveLesson}
                 disabled={saving || !newLessonTitle.trim()}
                 className="btn-primary flex-1 disabled:opacity-50"
               >
@@ -963,49 +1287,213 @@ export default function CourseEditor() {
       )}
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-[18px] shadow-xl max-w-md w-full p-8 animate-slide-up">
-            <div className="flex justify-center mb-6">
-              <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 flex items-center justify-center">
-                <AlertCircle size={24} className="text-[#ff3b30]" />
-              </div>
-            </div>
-            
-            <div className="text-center mb-6">
-              <h3 className="utility-heading text-[#1d1d1f] mb-2">
-                Delete {deleteConfirmType === 'chapter' ? 'Chapter' : 'Lesson'}?
-              </h3>
-              <p className="body-primary text-[#6e6e73]">
-                "{deleteConfirmName}" {deleteConfirmType === 'chapter' ? 'and all its lessons will be permanently deleted' : 'will be permanently deleted'}.
-              </p>
-            </div>
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setDeleteConfirmId(null);
+          setDeleteConfirmName('');
+          setDeleteConfirmType(null);
+        }}
+        onConfirm={deleteConfirmType === 'chapter' ? confirmDeleteChapter : confirmDeleteLesson}
+        title={`Delete ${deleteConfirmType === 'chapter' ? 'Chapter' : 'Lesson'}?`}
+        message={`"${deleteConfirmName}" ${deleteConfirmType === 'chapter' ? 'and all its lessons will be permanently deleted' : 'will be permanently deleted'}.`}
+        confirmText={saving ? "Deleting..." : "Delete"}
+        isDanger={true}
+      />
 
-            <div className="flex gap-3">
-              <button 
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setDeleteConfirmId(null);
-                  setDeleteConfirmName('');
-                  setDeleteConfirmType(null);
-                }}
-                disabled={saving}
-                className="btn-secondary flex-1 !text-[#1d1d1f] disabled:opacity-50"
-              >
-                Keep
-              </button>
-              <button 
-                onClick={deleteConfirmType === 'chapter' ? confirmDeleteChapter : confirmDeleteLesson}
-                disabled={saving}
-                className="btn-primary flex-1 !bg-[#ff3b30] hover:!bg-[#ff453a] disabled:opacity-50"
-              >
-                {saving ? 'Deleting...' : 'Delete'}
-              </button>
+      {/* Assignment Modal */}
+      <Modal isOpen={showAssignmentModal} onClose={() => setShowAssignmentModal(false)} title={editingAssignment ? 'Edit Assignment' : 'New Assignment'} size="lg">
+        <div className="space-y-4">
+          <div><label className="control-label block mb-2 text-[#6e6e73]">Title *</label><input type="text" value={assignmentForm.title} onChange={(e) => setAssignmentForm({ ...assignmentForm, title: e.target.value })} placeholder="Assignment title" /></div>
+          <div><label className="control-label block mb-2 text-[#6e6e73]">Description</label><textarea rows={3} value={assignmentForm.description} onChange={(e) => setAssignmentForm({ ...assignmentForm, description: e.target.value })} placeholder="Describe the assignment..." /></div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="control-label block mb-2 text-[#6e6e73]">Type</label>
+              <select value={assignmentForm.type} onChange={(e) => setAssignmentForm({ ...assignmentForm, type: e.target.value })}>
+                <option value="QUIZ">Quiz</option><option value="FILE_UPLOAD">File Upload</option><option value="LINK_SUBMIT">Link Submit</option>
+              </select>
             </div>
+            <div><label className="control-label block mb-2 text-[#6e6e73]">Max Score</label><input type="number" value={assignmentForm.maxScore} onChange={(e) => setAssignmentForm({ ...assignmentForm, maxScore: parseFloat(e.target.value) })} /></div>
+            <div><label className="control-label block mb-2 text-[#6e6e73]">Weight</label><input type="number" step="0.1" value={assignmentForm.weight} onChange={(e) => setAssignmentForm({ ...assignmentForm, weight: parseFloat(e.target.value) })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="control-label block mb-2 text-[#6e6e73]">Due Date</label><input type="datetime-local" value={assignmentForm.dueDate} onChange={(e) => setAssignmentForm({ ...assignmentForm, dueDate: e.target.value })} /></div>
+            <div><label className="control-label block mb-2 text-[#6e6e73]">Time Limit (min)</label><input type="number" value={assignmentForm.timeLimitMins} onChange={(e) => setAssignmentForm({ ...assignmentForm, timeLimitMins: parseInt(e.target.value) })} /></div>
+          </div>
+          <div className="flex items-center gap-5 flex-wrap">
+            <label className="flex items-center gap-1.5 text-sm text-[#6e6e73] cursor-pointer"><input type="checkbox" checked={assignmentForm.allowLate} onChange={(e) => setAssignmentForm({ ...assignmentForm, allowLate: e.target.checked })} className="!w-4 !h-4 accent-[#0071e3]" /> Allow Late</label>
+            <label className="flex items-center gap-1.5 text-sm text-[#6e6e73] cursor-pointer"><input type="checkbox" checked={assignmentForm.shuffleQuestions} onChange={(e) => setAssignmentForm({ ...assignmentForm, shuffleQuestions: e.target.checked })} className="!w-4 !h-4 accent-[#0071e3]" /> Shuffle Questions</label>
+            <label className="flex items-center gap-1.5 text-sm text-[#6e6e73] cursor-pointer"><input type="checkbox" checked={assignmentForm.shuffleOptions} onChange={(e) => setAssignmentForm({ ...assignmentForm, shuffleOptions: e.target.checked })} className="!w-4 !h-4 accent-[#0071e3]" /> Shuffle Options</label>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-[#f5f5f7]">
+            <button onClick={() => setShowAssignmentModal(false)} className="btn-secondary !text-[#1d1d1f]">Cancel</button>
+            <button onClick={handleSaveAssignment} disabled={saving} className="btn-primary disabled:opacity-50">{saving ? 'Saving...' : editingAssignment ? 'Update' : 'Create'}</button>
           </div>
         </div>
-      )}
+      </Modal>
+
+      {/* Question Modal */}
+      <Modal isOpen={showQuestionModal} onClose={() => setShowQuestionModal(false)} title={questionAssignment ? `Questions — ${questionAssignment.title}` : 'Manage Questions'} size="lg">
+        <div className="space-y-4">
+          {questionLoading ? (
+            <LoadingSpinner text="Loading questions..." />
+          ) : (
+            <>
+              <div className="space-y-4">
+                <h4 className="body-emphasis text-[#1d1d1f]">Add Question</h4>
+                <div><label className="control-label block mb-2 text-[#6e6e73]">Question Content *</label><textarea rows={3} value={questionForm.content} onChange={(e) => setQuestionForm({ ...questionForm, content: e.target.value })} placeholder="Write the question content here..." /></div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="control-label block mb-2 text-[#6e6e73]">Type</label>
+                    <select value={questionForm.type} onChange={(e) => {
+                      const newType = e.target.value;
+                      let newOptions = [...questionForm.options];
+                      if (newType === 'TRUE_FALSE') {
+                        newOptions = [{ content: 'True', isCorrect: true }, { content: 'False', isCorrect: false }];
+                      } else if (questionForm.type === 'TRUE_FALSE') {
+                        newOptions = [{ content: '', isCorrect: false }, { content: '', isCorrect: false }];
+                      } else if (newType === 'SINGLE_CHOICE') {
+                         const hasCorrect = newOptions.findIndex(o => o.isCorrect);
+                         newOptions = newOptions.map((o, i) => ({...o, isCorrect: i === hasCorrect}));
+                      }
+                      setQuestionForm({ ...questionForm, type: newType, options: newOptions });
+                    }}>
+                      <option value="SINGLE_CHOICE">Single Choice</option><option value="MULTIPLE_CHOICE">Multiple Choice</option><option value="TRUE_FALSE">True / False</option>
+                    </select>
+                  </div>
+                  <div><label className="control-label block mb-2 text-[#6e6e73]">Score</label><input type="number" min="0" value={questionForm.score} onChange={(e) => setQuestionForm({ ...questionForm, score: e.target.value })} /></div>
+                  <div><label className="control-label block mb-2 text-[#6e6e73]">Order</label><input type="number" min="1" value={questionForm.orderIndex} onChange={(e) => setQuestionForm({ ...questionForm, orderIndex: e.target.value })} /></div>
+                </div>
+                {/* Options Section */}
+                <div className="pt-3 border-t border-[#f5f5f7]">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="control-label text-[#6e6e73]">Answers / Options *</label>
+                    {questionForm.type !== 'TRUE_FALSE' && (
+                      <button onClick={() => setQuestionForm({...questionForm, options: [...questionForm.options, { content: '', isCorrect: false }]})} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
+                        <Plus size={12} className="inline mr-1"/>Add Option
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {questionForm.options?.map((opt, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <input 
+                          type={questionForm.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} 
+                          name="correctOption"
+                          checked={opt.isCorrect} 
+                          onChange={() => {
+                            const newOptions = [...questionForm.options];
+                            if (questionForm.type === 'MULTIPLE_CHOICE') {
+                              newOptions[index].isCorrect = !newOptions[index].isCorrect;
+                            } else {
+                              newOptions.forEach((o, i) => o.isCorrect = i === index);
+                            }
+                            setQuestionForm({ ...questionForm, options: newOptions });
+                          }} 
+                          className="w-4 h-4 accent-[#0071e3]"
+                        />
+                        <input 
+                          type="text" 
+                          value={opt.content} 
+                          disabled={questionForm.type === 'TRUE_FALSE'}
+                          onChange={(e) => {
+                            const newOptions = [...questionForm.options];
+                            newOptions[index].content = e.target.value;
+                            setQuestionForm({ ...questionForm, options: newOptions });
+                          }}
+                          className={`flex-1 text-sm py-1.5 ${opt.isCorrect ? 'border-[#0071e3] bg-[#0071e3]/5' : ''}`}
+                          placeholder={`Option ${index + 1}`}
+                        />
+                        {questionForm.type !== 'TRUE_FALSE' && questionForm.options.length > 2 && (
+                          <button onClick={() => {
+                            const newOptions = questionForm.options.filter((_, i) => i !== index);
+                            setQuestionForm({ ...questionForm, options: newOptions });
+                          }} className="text-[#ff3b30] p-1.5 hover:bg-[#ff3b30]/10 rounded">
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-3 border-t border-[#f5f5f7]">
+                  <button onClick={() => setShowQuestionModal(false)} className="btn-secondary !text-[#1d1d1f]">Close</button>
+                  <button onClick={handleAddQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50"><Plus size={14} className="inline-block mr-1" /> {questionSaving ? 'Adding...' : 'Add Question'}</button>
+                </div>
+              </div>
+              <div className="pt-4 border-t border-[#f5f5f7]">
+                <h4 className="body-emphasis text-[#1d1d1f] mb-3">Existing Questions</h4>
+                {questionAssignmentDetails?.questions?.length ? (
+                  <div className="space-y-2">
+                    {questionAssignmentDetails.questions.map((q, idx) => (
+                      <div key={idx} className="p-3 bg-[#f5f5f7] rounded-lg">
+                        <div className="flex items-center justify-between mb-1 text-[11px] text-[#86868b]">
+                          <span>{q.type || 'Question'}</span>
+                          <span>Score: {q.score ?? '—'}</span>
+                        </div>
+                        <p className="body-primary text-[#1d1d1f]">{q.content || 'No content'}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="micro-ui text-[#86868b]">No questions yet. Add one above.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Student Detail Modal */}
+      <Modal isOpen={showStudentDetail} onClose={() => setShowStudentDetail(false)} title="Student Details" size="md">
+        {selectedStudent && (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div><p className="control-label text-[#6e6e73] mb-1">Full Name</p><p className="body-emphasis text-[#1d1d1f]">{selectedStudent.fullName}</p></div>
+              <div><p className="control-label text-[#6e6e73] mb-1">Email</p><p className="body-emphasis text-[#1d1d1f]">{selectedStudent.email}</p></div>
+            </div>
+            <div className="border-t border-[#f5f5f7] pt-4 grid grid-cols-2 gap-4">
+              <div><p className="control-label text-[#6e6e73] mb-1">Status</p><StatusBadge status={selectedStudent.enrollmentStatus} size="xs" /></div>
+              <div><p className="control-label text-[#6e6e73] mb-1">Enrollment</p><p className="body-emphasis text-[#1d1d1f]">{selectedStudent.enrollmentStatus}</p></div>
+            </div>
+            <div className="border-t border-[#f5f5f7] pt-4 grid grid-cols-3 gap-4">
+              <div><p className="control-label text-[#6e6e73] mb-1">Submitted</p><p className="text-2xl font-bold text-[#0071e3]">{selectedStudent.submittedAssignments}</p></div>
+              <div><p className="control-label text-[#6e6e73] mb-1">Total</p><p className="text-2xl font-bold text-[#1d1d1f]">{selectedStudent.totalAssignments}</p></div>
+              <div><p className="control-label text-[#6e6e73] mb-1">Average Score</p><p className={`text-2xl font-bold ${getScoreColor(selectedStudent.averageScore)}`}>{formatScore(selectedStudent.averageScore)}</p></div>
+            </div>
+            <div className="border-t border-[#f5f5f7] pt-4">
+              <p className="control-label text-[#6e6e73] mb-2">Completion Rate</p>
+              <div className="w-full h-2 bg-[#d2d2d7] rounded-full overflow-hidden">
+                <div className="h-full bg-[#0071e3] rounded-full transition-all" style={{ width: selectedStudent.totalAssignments > 0 ? `${(selectedStudent.submittedAssignments / selectedStudent.totalAssignments) * 100}%` : '0%' }} />
+              </div>
+              <p className="micro-ui text-[#86868b] mt-1">{selectedStudent.totalAssignments > 0 ? `${Math.round((selectedStudent.submittedAssignments / selectedStudent.totalAssignments) * 100)}% complete` : 'No assignments'}</p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Assignment Delete Confirm */}
+      <ConfirmDialog 
+        isOpen={showAssignmentDeleteConfirm} 
+        onClose={() => setShowAssignmentDeleteConfirm(false)} 
+        onConfirm={handleDeleteAssignment} 
+        title="Delete Assignment" 
+        message="This will permanently delete the assignment and all its questions. Are you sure?" 
+        confirmText={saving ? "Deleting..." : "Delete"}
+        isDanger={true}
+      />
+
+      {/* Course Delete Confirm */}
+      <ConfirmDialog 
+        isOpen={showDeleteCourseConfirm} 
+        onClose={() => setShowDeleteCourseConfirm(false)} 
+        onConfirm={handleDeleteCourse} 
+        title="Delete Course" 
+        message={`Are you sure you want to permanently delete "${course?.title}"? This action cannot be undone and will delete all chapters, lessons, assignments, and student enrollments associated with this course.`} 
+        confirmText={saving ? "Deleting..." : "Delete"}
+        isDanger={true}
+      />
     </div>
   );
-  
 }

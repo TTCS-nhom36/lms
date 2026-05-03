@@ -18,9 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class QuizAttemptController {
 
     private final QuizAttemptService quizAttemptService;
+    private final com.ttcs.backend.service.CurrentUserService currentUserService;
 
-    public QuizAttemptController(QuizAttemptService quizAttemptService) {
+    public QuizAttemptController(QuizAttemptService quizAttemptService, com.ttcs.backend.service.CurrentUserService currentUserService) {
         this.quizAttemptService = quizAttemptService;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping
@@ -36,5 +38,11 @@ public class QuizAttemptController {
     @GetMapping("/{id}/result")
     public ResponseEntity<SubmitQuizResponse> getAttemptResult(@PathVariable Long id) {
         return ResponseEntity.ok(quizAttemptService.getAttemptResult(id));
+    }
+
+    @GetMapping("/assignment/{assignmentId}/my-attempt")
+    public ResponseEntity<SubmitQuizResponse> getMyAttempt(@PathVariable Long assignmentId) {
+        java.util.UUID userId = currentUserService.getCurrentUserId();
+        return ResponseEntity.ok(quizAttemptService.getMyAttempt(assignmentId, userId));
     }
 }
