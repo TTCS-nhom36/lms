@@ -22,4 +22,5 @@ public class EnrollmentResponse {
     private LocalDateTime enrolledAt;
     private EnrollmentStatus status;
     private LocalDateTime completedAt;
+    private Double progressPercent;
 }

@@ -60,17 +60,21 @@ public class QuizAttemptService {
     }
 
     public QuizAttemptResponse createAttempt(CreateAttemptRequest request) {
+        if (request.getAssignmentId() == null || request.getUserId() == null) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "assignmentId and userId must not be null");
+        }
         Assignment assignment = assignmentRepository.findById(request.getAssignmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + request.getAssignmentId()));
 
         User user = userRepository.findById(request.getUserId())
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + request.getUserId()));
 
-        // Check if attempt already exists for this user + assignment pair
+        // If attempt already exists, delete it and create a fresh one (retry)
         quizAttemptRepository.findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId())
                 .ifPresent(existing -> {
-                    throw new AppException(ErrorCode.DATA_INTEGRITY_VIOLATION,
-                            "User already has an attempt for this assignment");
+                    selectedAnswerRepository.deleteAll(selectedAnswerRepository.findByQuizAttemptId(existing.getId()));
+                    quizAttemptRepository.delete(existing);
+                    quizAttemptRepository.flush();
                 });
 
         QuizAttempt attempt = QuizAttempt.builder()

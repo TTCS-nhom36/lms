@@ -12,6 +12,10 @@ import org.springframework.stereotype.Component;
 public class EnrollmentMapper {
 
     public EnrollmentResponse toResponse(Enrollment enrollment) {
+        return toResponse(enrollment, null);
+    }
+
+    public EnrollmentResponse toResponse(Enrollment enrollment, Double progressPercent) {
         if (enrollment == null) {
             return null;
         }
@@ -23,6 +27,7 @@ public class EnrollmentMapper {
                 .enrolledAt(enrollment.getEnrolledAt())
                 .status(enrollment.getStatus())
                 .completedAt(enrollment.getCompletedAt())
+                .progressPercent(progressPercent)
                 .build();
     }
 

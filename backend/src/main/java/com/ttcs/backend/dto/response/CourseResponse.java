@@ -24,4 +24,5 @@ public class CourseResponse {
     private UUID createdById;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Double progressPercent;
 }

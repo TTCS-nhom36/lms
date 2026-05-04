@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { assignmentApi } from '../../api/assignmentApi';
 import { quizAttemptApi } from '../../api/quizAttemptApi';
@@ -7,7 +7,11 @@ import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
-import { ArrowLeft, ClipboardList, Upload, Link as LinkIcon, Calendar, Clock, CheckCircle, Send, PlayCircle } from 'lucide-react';
+import {
+  ArrowLeft, ClipboardList, Upload, Link as LinkIcon,
+  Calendar, Clock, CheckCircle, Send, PlayCircle,
+  RefreshCw, AlertTriangle, Timer
+} from 'lucide-react';
 
 export default function AssignmentView() {
   const { id } = useParams();
@@ -28,9 +32,20 @@ export default function AssignmentView() {
   const [quizResult, setQuizResult] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [quizStarted, setQuizStarted] = useState(false);
-  const [selectedAnswers, setSelectedAnswers] = useState({}); // { questionId: [opt1, opt2] }
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [showRetryConfirm, setShowRetryConfirm] = useState(false);
+
+  // Countdown timer
+  const [timeLeft, setTimeLeft] = useState(null); // seconds
+  const timerRef = useRef(null);
+  const autoSubmitCalledRef = useRef(false);
 
   useEffect(() => { loadData(); }, [id]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -60,15 +75,52 @@ export default function AssignmentView() {
     }
   };
 
-  const handleStartQuiz = async () => {
+  const startTimer = useCallback((timeLimitMins) => {
+    if (!timeLimitMins || timeLimitMins <= 0) return;
+    autoSubmitCalledRef.current = false;
+    const seconds = timeLimitMins * 60;
+    setTimeLeft(seconds);
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // Auto-submit when time runs out
+  useEffect(() => {
+    if (timeLeft === 0 && quizStarted && !autoSubmitCalledRef.current) {
+      autoSubmitCalledRef.current = true;
+      toast.error('⏰ Time is up! Auto-submitting your quiz...');
+      handleSubmitQuiz(true);
+    }
+  }, [timeLeft, quizStarted]);
+
+  const handleStartQuiz = async (isRetry = false) => {
+    const assignmentId = Number(id);
+    if (!assignmentId || !user?.id) {
+      toast.error('Invalid session. Please refresh the page.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await quizAttemptApi.createAttempt({ assignmentId: id, userId: user.id });
+      await quizAttemptApi.createAttempt({ assignmentId, userId: user.id });
       const qRes = await assignmentApi.getQuestions(id);
       setQuestions(qRes.data || []);
+      setSelectedAnswers({});
+      setQuizResult(null);
       setQuizStarted(true);
+      setShowRetryConfirm(false);
+      if (assignment?.timeLimitMins > 0) {
+        startTimer(assignment.timeLimitMins);
+      }
     } catch (err) {
-      // If it fails because of DATA_INTEGRITY_VIOLATION, it means attempt exists
       toast.error(err.response?.data?.message || 'Failed to start quiz');
     } finally {
       setSubmitting(false);
@@ -86,7 +138,8 @@ export default function AssignmentView() {
     });
   };
 
-  const handleSubmitQuiz = async () => {
+  const handleSubmitQuiz = async (isAutoSubmit = false) => {
+    if (timerRef.current) clearInterval(timerRef.current);
     setSubmitting(true);
     try {
       const answersList = [];
@@ -97,14 +150,20 @@ export default function AssignmentView() {
       });
 
       const res = await quizAttemptApi.submitQuiz({
-        quizId: id,
+        quizId: Number(id),
         studentId: user.id,
         answers: answersList
       });
-      toast.success('Quiz submitted successfully!');
+
+      // Save quiz score to submission
+      await assignmentApi.submit(id, { autoScore: res.data.scorePercentage });
+
+      if (!isAutoSubmit) toast.success('Quiz submitted successfully! 🎉');
       setQuizResult(res.data);
       setQuizStarted(false);
-    } catch {
+      setTimeLeft(null);
+    } catch (error) {
+      console.error('Submit quiz error:', error);
       toast.error('Failed to submit quiz');
     } finally {
       setSubmitting(false);
@@ -125,88 +184,159 @@ export default function AssignmentView() {
     }
   };
 
+  const formatTime = (seconds) => {
+    if (seconds === null) return '';
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const getTimerColor = () => {
+    if (timeLeft === null) return '';
+    if (timeLeft <= 60) return 'text-rose-500 animate-pulse';
+    if (timeLeft <= 180) return 'text-amber-500';
+    return 'text-emerald-500';
+  };
+
+  const answeredCount = Object.keys(selectedAnswers).filter(k => selectedAnswers[k]?.length > 0).length;
+
   if (loading) return <LoadingSpinner text="Loading assignment..." />;
   if (!assignment) return null;
 
   const isPastDue = assignment.dueDate && new Date(assignment.dueDate) < new Date();
 
   const renderQuizMode = () => {
-    if (quizResult) {
+    // Show result
+    if (quizResult && !quizStarted) {
+      const pct = quizResult.scorePercentage ?? 0;
+      const passed = pct >= 60;
       return (
-        <div className="glass-card p-6 border-2 border-emerald-500/20">
-          <h3 className="text-lg font-semibold text-neutral-900 mb-4 flex items-center gap-2">
-            <CheckCircle size={18} className="text-emerald-500" />
-            Quiz Result
-          </h3>
-          <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl">
-            <div>
-              <span className="text-xs text-neutral-400 block">Score</span>
-              <span className="text-2xl font-bold text-primary-500">{quizResult.scorePercentage.toFixed(1)}%</span>
+        <div className="space-y-4">
+          <div className={`glass-card p-6 border-2 ${passed ? 'border-emerald-500/20' : 'border-rose-400/20'}`}>
+            <h3 className="text-lg font-semibold text-neutral-900 mb-4 flex items-center gap-2">
+              <CheckCircle size={18} className={passed ? 'text-emerald-500' : 'text-rose-400'} />
+              Quiz Result
+            </h3>
+            <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl mb-4">
+              <div>
+                <span className="text-xs text-neutral-400 block mb-1">Score</span>
+                <span className={`text-3xl font-bold ${passed ? 'text-emerald-500' : 'text-rose-400'}`}>
+                  {pct.toFixed(1)}%
+                </span>
+              </div>
+              <div>
+                <span className="text-xs text-neutral-400 block mb-1">Correct Answers</span>
+                <span className="text-3xl font-bold text-neutral-900">
+                  {quizResult.correctAnswers} / {quizResult.totalQuestions}
+                </span>
+              </div>
+              <div className="col-span-2 text-sm text-neutral-500">
+                Submitted at: {new Date(quizResult.submittedAt).toLocaleString()}
+              </div>
             </div>
-            <div>
-              <span className="text-xs text-neutral-400 block">Correct Answers</span>
-              <span className="text-2xl font-bold text-neutral-900">{quizResult.correctAnswers} / {quizResult.totalQuestions}</span>
-            </div>
-            <div className="col-span-2 text-sm text-neutral-500">
-              Submitted at: {new Date(quizResult.submittedAt).toLocaleString()}
-            </div>
+            {/* Retry button */}
+            {!isPastDue && (
+              <button
+                onClick={() => setShowRetryConfirm(true)}
+                className="flex items-center gap-2 text-sm font-medium text-primary-500 hover:text-primary-600 border border-primary-200 hover:border-primary-300 px-4 py-2 rounded-lg transition-all"
+              >
+                <RefreshCw size={14} /> Retry Quiz
+              </button>
+            )}
           </div>
         </div>
       );
     }
 
+    // Quiz in progress
     if (quizStarted) {
       return (
-        <div className="glass-card p-6 space-y-6">
-          <h3 className="text-lg font-semibold text-neutral-900">Quiz Questions</h3>
-          <div className="space-y-6">
-            {questions.map((q, idx) => {
-              const isMultiple = q.type === 'MULTIPLE_CHOICE';
-              const selected = selectedAnswers[q.id] || [];
-
-              return (
-                <div key={q.id} className="p-4 bg-neutral-50 rounded-xl border border-neutral-100">
-                  <div className="flex justify-between items-start mb-3">
-                    <p className="font-medium text-neutral-900"><span className="text-primary-500 mr-2">{idx + 1}.</span>{q.content}</p>
-                    <span className="text-xs font-semibold px-2 py-1 bg-neutral-200 text-neutral-600 rounded">Score: {q.score}</span>
-                  </div>
-                  <div className="space-y-2 mt-4">
-                    {q.options?.map(opt => {
-                      const isChecked = selected.includes(opt.id);
-                      return (
-                        <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isChecked ? 'bg-primary-50 border-primary-200' : 'bg-white border-neutral-200 hover:border-primary-300'}`}>
-                          <input
-                            type={isMultiple ? 'checkbox' : 'radio'}
-                            name={`question_${q.id}`}
-                            checked={isChecked}
-                            onChange={() => handleToggleAnswer(q.id, opt.id, isMultiple)}
-                            className="w-4 h-4 accent-primary-500"
-                          />
-                          <span className={`text-sm ${isChecked ? 'text-primary-900 font-medium' : 'text-neutral-700'}`}>{opt.content}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+        <div className="space-y-4">
+          {/* Sticky header with timer & progress */}
+          <div className="glass-card p-4 flex items-center justify-between sticky top-4 z-10 border border-neutral-200 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-neutral-500 font-medium">
+                Progress: <span className="text-neutral-900 font-bold">{answeredCount}/{questions.length}</span> answered
+              </span>
+            </div>
+            {timeLeft !== null && (
+              <div className={`flex items-center gap-2 font-mono text-xl font-bold ${getTimerColor()}`}>
+                <Timer size={18} />
+                {formatTime(timeLeft)}
+              </div>
+            )}
           </div>
-          <div className="pt-4 border-t border-neutral-200 flex justify-end">
-            <button onClick={handleSubmitQuiz} disabled={submitting} className="btn-primary">
-              <Send size={16} /> {submitting ? 'Submitting...' : 'Submit Quiz'}
-            </button>
+
+          <div className="glass-card p-6 space-y-6">
+            <h3 className="text-lg font-semibold text-neutral-900">Quiz Questions</h3>
+            <div className="space-y-6">
+              {questions.map((q, idx) => {
+                const isMultiple = q.type === 'MULTIPLE_CHOICE';
+                const selected = selectedAnswers[q.id] || [];
+                const isAnswered = selected.length > 0;
+
+                return (
+                  <div key={q.id} className={`p-4 rounded-xl border transition-all ${isAnswered ? 'bg-primary-50/40 border-primary-200' : 'bg-neutral-50 border-neutral-100'}`}>
+                    <div className="flex justify-between items-start mb-3">
+                      <p className="font-medium text-neutral-900">
+                        <span className={`mr-2 font-bold ${isAnswered ? 'text-primary-500' : 'text-neutral-400'}`}>{idx + 1}.</span>
+                        {q.content}
+                      </p>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                        <span className="text-xs font-semibold px-2 py-1 bg-neutral-200 text-neutral-600 rounded">{q.score} pts</span>
+                        {isMultiple && <span className="text-xs text-violet-500 font-medium border border-violet-200 px-2 py-0.5 rounded">Multi</span>}
+                      </div>
+                    </div>
+                    <div className="space-y-2 mt-3">
+                      {q.options?.map(opt => {
+                        const isChecked = selected.includes(opt.id);
+                        return (
+                          <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${isChecked ? 'bg-primary-50 border-primary-300 shadow-sm' : 'bg-white border-neutral-200 hover:border-primary-200 hover:bg-primary-50/30'}`}>
+                            <input
+                              type={isMultiple ? 'checkbox' : 'radio'}
+                              name={`question_${q.id}`}
+                              checked={isChecked}
+                              onChange={() => handleToggleAnswer(q.id, opt.id, isMultiple)}
+                              className="w-4 h-4 accent-primary-500"
+                            />
+                            <span className={`text-sm ${isChecked ? 'text-primary-900 font-medium' : 'text-neutral-700'}`}>{opt.content}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="pt-4 border-t border-neutral-200 flex items-center justify-between">
+              <span className="text-sm text-neutral-500">{answeredCount} of {questions.length} answered</span>
+              <button
+                onClick={() => handleSubmitQuiz(false)}
+                disabled={submitting}
+                className="btn-primary"
+              >
+                <Send size={16} /> {submitting ? 'Submitting...' : 'Submit Quiz'}
+              </button>
+            </div>
           </div>
         </div>
       );
     }
 
+    // Not started yet
     return (
-      <div className="glass-card p-6 text-center">
-        <ClipboardList size={40} className="text-neutral-300 mx-auto mb-3" />
-        <p className="text-neutral-500 mb-4">You have not taken this quiz yet.</p>
-        <button onClick={handleStartQuiz} disabled={submitting || isPastDue} className="btn-primary">
+      <div className="glass-card p-8 text-center">
+        <ClipboardList size={48} className="text-neutral-300 mx-auto mb-4" />
+        <p className="text-neutral-500 mb-2 text-lg font-medium">Ready to take this quiz?</p>
+        {assignment.timeLimitMins > 0 && (
+          <p className="text-sm text-amber-500 mb-5 flex items-center justify-center gap-1">
+            <Clock size={14} /> Time limit: {assignment.timeLimitMins} minutes — timer starts when you begin
+          </p>
+        )}
+        <button onClick={() => handleStartQuiz(false)} disabled={submitting || isPastDue} className="btn-primary">
           <PlayCircle size={16} /> {submitting ? 'Starting...' : 'Start Quiz'}
         </button>
+        {isPastDue && <p className="text-xs text-rose-400 mt-3">This quiz is past due.</p>}
       </div>
     );
   };
@@ -337,6 +467,29 @@ export default function AssignmentView() {
       </div>
 
       {assignment.type === 'QUIZ' ? renderQuizMode() : renderFileLinkMode()}
+
+      {/* Retry confirmation */}
+      <Modal isOpen={showRetryConfirm} onClose={() => setShowRetryConfirm(false)} title="Retry Quiz?" size="sm">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+            <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800">
+              Your previous result will be <strong>permanently replaced</strong>. This action cannot be undone.
+            </p>
+          </div>
+          {assignment?.timeLimitMins > 0 && (
+            <p className="text-sm text-neutral-500 flex items-center gap-1">
+              <Timer size={14} /> New attempt will have {assignment.timeLimitMins} minutes.
+            </p>
+          )}
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => setShowRetryConfirm(false)} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={() => handleStartQuiz(true)} disabled={submitting} className="btn-primary flex-1 !bg-amber-500 hover:!bg-amber-600">
+              <RefreshCw size={14} /> {submitting ? 'Starting...' : 'Yes, Retry'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Submit Modal for FILE_UPLOAD / LINK_SUBMIT */}
       <Modal isOpen={showSubmitModal} onClose={() => setShowSubmitModal(false)} title="Submit Assignment" size="md">

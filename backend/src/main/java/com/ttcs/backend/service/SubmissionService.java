@@ -49,6 +49,10 @@ public class SubmissionService {
         Submission submission = submissionMapper.toEntity(request);
         submission.setAssignment(findAssignmentById(request.getAssignmentId()));
         submission.setUser(findUserById(request.getUserId()));
+        if (request.getAutoScore() != null) {
+            submission.setAutoScore(request.getAutoScore());
+            submission.setFinalScore(request.getAutoScore());
+        }
         return submissionMapper.toResponse(submissionRepository.save(submission));
     }
 
@@ -59,6 +63,10 @@ public class SubmissionService {
         submission.setIsLate(request.getIsLate());
         submission.setFileUrl(request.getFileUrl());
         submission.setLinkUrl(request.getLinkUrl());
+        if (request.getAutoScore() != null) {
+            submission.setAutoScore(request.getAutoScore());
+            submission.setFinalScore(request.getAutoScore());
+        }
         return submissionMapper.toResponse(submissionRepository.save(submission));
     }
 

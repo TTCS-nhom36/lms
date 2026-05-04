@@ -29,7 +29,8 @@ public class LessonController {
 
     @GetMapping("/api/lms/chapters/{chapterId}/lessons")
     public ResponseEntity<List<LessonResponse>> getByChapter(@PathVariable Long chapterId) {
-        return ResponseEntity.ok(lessonService.findByChapterId(chapterId));
+        var userId = currentUserService.getCurrentUserId();
+        return ResponseEntity.ok(lessonService.findByChapterId(chapterId, userId));
     }
 
     @PostMapping("/api/lms/chapters/{chapterId}/lessons")

@@ -322,8 +322,12 @@ export default function CourseDetail() {
                   )}
                   {(lessons[ch.id] || []).sort((a, b) => a.orderIndex - b.orderIndex).map((ls) => {
                     const Icon = contentIcons[ls.contentType] || FileText;
-                    const progress = lessonProgress[ls.id];
-                    const progressPercent = progress?.isCompleted ? 100 : progress?.watchDurationSecs ? Math.min(100, Math.round((progress.watchDurationSecs / 600) * 100)) : 0;
+                    const progressPercent = ls.isCompleted
+                      ? 100
+                      : ls.watchDurationSecs
+                      ? Math.min(99, Math.round((ls.watchDurationSecs / 600) * 100))
+                      : 0;
+                    const hasProgress = ls.isCompleted || (ls.watchDurationSecs > 0);
 
                     return (
                       <div key={ls.id} className="border-b border-neutral-200 last:border-0">
@@ -331,43 +335,73 @@ export default function CourseDetail() {
                           onClick={() => {
                             if (isStudent) navigate(`/student/courses/${id}/lessons/${ls.id}`);
                           }}
-                          className={`flex items-center gap-3 px-6 py-2.5 transition-colors ${isStudent ? 'cursor-pointer hover:bg-neutral-100' : ''
-                            }`}
+                          className={`flex items-center gap-3 px-6 py-3 transition-colors ${isStudent ? 'cursor-pointer hover:bg-neutral-50' : ''}`}
                         >
-                          <Icon size={14} className="text-neutral-400" />
-                          <span className="text-sm text-neutral-700 flex-1">{ls.title}</span>
-                          <StatusBadge status={ls.contentType} size="xs" />
-                          {ls.isFreePreview && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400">FREE</span>
+                          {isStudent && ls.isCompleted ? (
+                            <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
+                          ) : (
+                            <Icon size={14} className="text-neutral-400 flex-shrink-0" />
                           )}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-sm font-medium truncate ${ls.isCompleted && isStudent ? 'text-emerald-700' : 'text-neutral-700'}`}>
+                                {ls.title}
+                              </span>
+                              <StatusBadge status={ls.contentType} size="xs" />
+                              {ls.isFreePreview && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-500">FREE</span>
+                              )}
+                              {isStudent && ls.isCompleted && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-600">Hoàn thành</span>
+                              )}
+                              {isStudent && !ls.isCompleted && ls.watchDurationSecs > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-600">Đang học</span>
+                              )}
+                            </div>
+                            {isStudent && hasProgress && (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <div className="flex-1 h-1 rounded-full bg-neutral-100 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${ls.isCompleted ? 'bg-emerald-500' : 'bg-primary-400'}`}
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-neutral-400 w-8 text-right">{progressPercent}%</span>
+                              </div>
+                            )}
+                          </div>
+
                           {ls.contentType === 'DOCUMENT' && ls.contentUrl && (
-                            <a href={ls.contentUrl} target="_blank" rel="noreferrer" className="btn-secondary btn-xs">
-                              Download
+                            <a
+                              href={ls.contentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="btn-secondary btn-xs flex-shrink-0"
+                            >
+                              Tải xuống
                             </a>
                           )}
-                          {isStudent && <Play size={12} className="text-primary-400" />}
+                          {isStudent && !ls.isCompleted && (
+                            <Play size={12} className="text-primary-400 flex-shrink-0" />
+                          )}
                         </div>
+
                         {isAdmin && (
-                          <div className="px-6 py-3 flex flex-wrap items-center gap-2 bg-slate-50">
-                            <button onClick={() => handleEditLesson(ls)} className="btn-secondary !px-2 !py-1 text-sm">
-                              <Edit size={14} /> Edit
+                          <div className="px-6 py-2 flex flex-wrap items-center gap-2 bg-slate-50 border-t border-neutral-100">
+                            <button onClick={() => handleEditLesson(ls)} className="btn-secondary !px-2 !py-1 text-xs">
+                              <Edit size={13} /> Edit
                             </button>
-                            <button onClick={() => handleOpenProgress(ls)} className="btn-secondary !px-2 !py-1 text-sm">
-                              <CheckCircle size={14} /> Progress
+                            <button onClick={() => handleOpenProgress(ls)} className="btn-secondary !px-2 !py-1 text-xs">
+                              <CheckCircle size={13} /> Progress
                             </button>
-                            <button onClick={() => { setDeleteLessonId(ls.id); setShowLessonConfirm(true); }} className="btn-danger !px-2 !py-1 text-sm">
-                              <Trash2 size={14} /> Delete
+                            <button
+                              onClick={() => { setDeleteLessonId(ls.id); setShowLessonConfirm(true); }}
+                              className="btn-danger !px-2 !py-1 text-xs"
+                            >
+                              <Trash2 size={13} /> Delete
                             </button>
-                          </div>
-                        )}
-                        {progress && (
-                          <div className="px-6 pb-3">
-                            <div className="h-2 rounded-full bg-neutral-200 overflow-hidden">
-                              <div className="h-full rounded-full bg-primary-500" style={{ width: `${progressPercent}%` }} />
-                            </div>
-                            <div className="mt-1 text-xs text-neutral-500">
-                              {progressPercent}% {progress.isCompleted ? 'Completed' : 'In progress'}
-                            </div>
                           </div>
                         )}
                       </div>

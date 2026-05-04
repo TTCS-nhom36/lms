@@ -40,4 +40,8 @@ public class QuestionOption {
 
     @Column(name = "order_index", nullable = false)
     private Integer orderIndex;
+
+    @Builder.Default
+    @jakarta.persistence.OneToMany(mappedBy = "selectedOption", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<SelectedAnswer> selectedAnswers = new java.util.ArrayList<>();
 }

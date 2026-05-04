@@ -51,10 +51,16 @@ public class LessonService {
     }
 
     @Transactional(readOnly = true)
-    public List<LessonResponse> findByChapterId(Long chapterId) {
+    public List<LessonResponse> findByChapterId(Long chapterId, UUID userId) {
         return lessonRepository.findAll().stream()
                 .filter(lesson -> lesson.getChapter() != null && chapterId.equals(lesson.getChapter().getId()))
-                .map(lessonMapper::toResponse)
+                .map(lesson -> {
+                    LessonProgress progress = null;
+                    if (userId != null) {
+                        progress = lessonProgressRepository.findByLessonIdAndUserId(lesson.getId(), userId).orElse(null);
+                    }
+                    return lessonMapper.toResponse(lesson, progress);
+                })
                 .toList();
     }
 
@@ -67,7 +73,11 @@ public class LessonService {
     public LessonResponse findAccessibleById(Long id, UUID userId) {
         Lesson lesson = findLessonEntityById(id);
         if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId)) {
-            return lessonMapper.toResponse(lesson);
+            LessonProgress progress = null;
+            if (userId != null) {
+                progress = lessonProgressRepository.findByLessonIdAndUserId(id, userId).orElse(null);
+            }
+            return lessonMapper.toResponse(lesson, progress);
         }
         throw new AppException(ErrorCode.ACCESS_DENIED, "Lesson requires enrollment");
     }
@@ -110,20 +120,28 @@ public class LessonService {
     public LessonProgressResponse updateProgress(Long lessonId, UUID userId, UpdateLessonProgressRequest request) {
         Lesson lesson = findLessonEntityById(lessonId);
         User user = findUserById(userId);
-        LessonProgress lessonProgress = lessonProgressRepository.findAll().stream()
-                .filter(progress -> progress.getLesson() != null && lessonId.equals(progress.getLesson().getId()))
-                .filter(progress -> progress.getUser() != null && userId.equals(progress.getUser().getId()))
-                .findFirst()
+        LessonProgress lessonProgress = lessonProgressRepository.findByLessonIdAndUserId(lessonId, userId)
                 .orElseGet(LessonProgress::new);
         lessonProgress.setLesson(lesson);
         lessonProgress.setUser(user);
-        lessonProgress.setIsCompleted(request != null && request.getIsCompleted() != null ? request.getIsCompleted() : lessonProgress.getIsCompleted());
-        lessonProgress.setWatchDurationSecs(request != null ? request.getWatchDurationSecs() : lessonProgress.getWatchDurationSecs());
+        
+        if (request != null && request.getIsCompleted() != null) {
+            lessonProgress.setIsCompleted(request.getIsCompleted());
+        } else if (lessonProgress.getIsCompleted() == null) {
+            lessonProgress.setIsCompleted(false);
+        }
+        
+        if (request != null && request.getWatchDurationSecs() != null) {
+            lessonProgress.setWatchDurationSecs(request.getWatchDurationSecs());
+        } else if (lessonProgress.getWatchDurationSecs() == null) {
+            lessonProgress.setWatchDurationSecs(0);
+        }
+        
         lessonProgress.setLastAccessedAt(java.time.LocalDateTime.now());
         if (Boolean.TRUE.equals(lessonProgress.getIsCompleted()) && lessonProgress.getCompletedAt() == null) {
             lessonProgress.setCompletedAt(java.time.LocalDateTime.now());
         }
-        return lessonProgressMapper.toResponse(lessonProgressRepository.save(lessonProgress));
+        return lessonProgressMapper.toResponse(lessonProgressRepository.saveAndFlush(lessonProgress));
     }
 
     private Lesson findLessonEntityById(Long id) {
