@@ -21,11 +21,8 @@ export default function AdminCourses() {
   const [totalElements, setTotalElements] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editCourse, setEditCourse] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const [form, setForm] = useState({ title: '', description: '', thumbnailUrl: '', status: 'DRAFT', createdById: null });
   const { user } = useAuth();
 
   useEffect(() => { loadCourses(); }, [page, search, statusFilter]);
@@ -44,39 +41,14 @@ export default function AdminCourses() {
   };
 
   const handleCreate = () => {
-    setEditCourse(null);
-    setForm({ title: '', description: '', thumbnailUrl: '', status: 'DRAFT', createdById: user?.id || null });
-    setShowModal(true);
+    navigate('/admin/courses/new');
   };
 
   const handleEdit = (c) => {
-    setEditCourse(c);
-    setForm({
-      title: c.title || '',
-      description: c.description || '',
-      thumbnailUrl: c.thumbnailUrl || '',
-      status: c.status,
-      createdById: c.createdById || user?.id || null,
-    });
-    setShowModal(true);
+    navigate(`/admin/courses/${c.id}/edit`);
   };
 
-  const handleSave = async () => {
-    try {
-      const payload = { ...form, createdById: form.createdById || user?.id };
-      if (editCourse) {
-        await courseApi.update(editCourse.id, payload);
-        toast.success('Course updated');
-      } else {
-        await courseApi.create(payload);
-        toast.success('Course created');
-      }
-      setShowModal(false);
-      loadCourses();
-    } catch {
-      toast.error('Failed to save course');
-    }
-  };
+
 
   const handleDelete = async () => {
     try { await courseApi.delete(deleteId); toast.success('Course archived'); setShowConfirm(false); loadCourses(); }
@@ -122,7 +94,7 @@ export default function AdminCourses() {
           {courses.map((c, i) => (
             <div
               key={c.id}
-              onClick={() => navigate(`/admin/courses/${c.id}`)}
+              onClick={() => navigate(`/admin/courses/${c.id}/edit`)}
               className="card overflow-hidden animate-slide-up cursor-pointer"
               style={{ opacity: 0, animationDelay: `${i * 0.04}s` }}
             >
@@ -160,25 +132,7 @@ export default function AdminCourses() {
 
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editCourse ? 'Edit Course' : 'New Course'} size="md">
-        <div className="space-y-4">
-          <div><label className="text-xs font-medium text-gray-600 mb-1 block">Title</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-gray-600 mb-1 block">Description</label><textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-gray-600 mb-1 block">Thumbnail URL</label><input type="url" value={form.thumbnailUrl} onChange={(e) => setForm({ ...form, thumbnailUrl: e.target.value })} placeholder="https://..." /></div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Status</label>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full">
-              <option value="DRAFT">Draft</option>
-              <option value="PUBLISHED">Published</option>
-              <option value="ARCHIVED">Archived</option>
-            </select>
-          </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-            <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleSave} className="btn-primary">Save</button>
-          </div>
-        </div>
-      </Modal>
+
 
       <ConfirmDialog isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleDelete} title="Archive Course" message="This will archive the course. Are you sure?" />
     </div>
