@@ -53,8 +53,8 @@ export default function StudentDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: 'Enrolled Courses', value: myCourses.length, icon: BookMarked, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
-          { label: 'In Progress', value: myCourses.length, icon: TrendingUp, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
-          { label: 'Completed', value: 0, icon: Target, bg: 'bg-green-50', iconColor: 'text-green-500' },
+          { label: 'In Progress', value: myCourses.filter(c => (c.progressPercent || 0) > 0 && (c.progressPercent || 0) < 100).length, icon: TrendingUp, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
+          { label: 'Completed', value: myCourses.filter(c => (c.progressPercent || 0) >= 100).length, icon: Target, bg: 'bg-green-50', iconColor: 'text-green-500' },
         ].map((s, i) => (
           <div key={s.label} className="card p-5 animate-slide-up" style={{ opacity: 0, animationDelay: `${i * 0.07}s` }}>
             <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center mb-3`}>
@@ -108,14 +108,19 @@ export default function StudentDashboard() {
               <div
                 key={c.id}
                 onClick={() => navigate(`/student/courses/${c.id}`)}
-                className="card overflow-hidden cursor-pointer animate-slide-up"
+                className="card overflow-hidden cursor-pointer animate-slide-up group hover:shadow-md transition-shadow"
                 style={{ opacity: 0, animationDelay: `${i * 0.05}s` }}
               >
-                <div className="h-28 bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+                <div className="h-28 bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center relative overflow-hidden">
                   {c.thumbnailUrl ? (
-                    <img src={c.thumbnailUrl} alt={c.title} className="w-full h-full object-cover" />
+                    <img src={c.thumbnailUrl} alt={c.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   ) : (
                     <BookOpen size={28} className="text-emerald-300" />
+                  )}
+                  {(c.progressPercent || 0) >= 100 && (
+                    <div className="absolute top-2 right-2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      ✓ Done
+                    </div>
                   )}
                 </div>
                 <div className="p-4">
@@ -123,9 +128,14 @@ export default function StudentDashboard() {
                   <p className="text-xs text-gray-400 mt-1 line-clamp-2">{c.description || 'No description'}</p>
                   <div className="mt-3">
                     <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: '0%' }} />
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all"
+                        style={{ width: `${c.progressPercent || 0}%` }}
+                      />
                     </div>
-                    <span className="text-[11px] text-gray-400 mt-1 block">0% complete</span>
+                    <span className="text-[11px] text-gray-400 mt-1 block">
+                      {c.progressPercent ? `${c.progressPercent}% hoàn thành` : 'Chưa bắt đầu'}
+                    </span>
                   </div>
                 </div>
               </div>

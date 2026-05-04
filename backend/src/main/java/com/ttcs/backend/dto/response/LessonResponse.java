@@ -24,5 +24,7 @@ public class LessonResponse {
     private Integer orderIndex;
     private Long unlockConditionId;
     private Boolean isFreePreview;
+    private Boolean isCompleted;
+    private Integer watchDurationSecs;
     private LocalDateTime createdAt;
 }

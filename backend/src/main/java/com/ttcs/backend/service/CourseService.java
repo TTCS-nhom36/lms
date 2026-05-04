@@ -36,6 +36,8 @@ import com.ttcs.backend.repository.AssignmentRepository;
 import com.ttcs.backend.repository.ChapterRepository;
 import com.ttcs.backend.repository.CourseRepository;
 import com.ttcs.backend.repository.EnrollmentRepository;
+import com.ttcs.backend.repository.LessonProgressRepository;
+import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
 
@@ -49,18 +51,22 @@ public class CourseService {
     private final EnrollmentRepository enrollmentRepository;
     private final AssignmentRepository assignmentRepository;
     private final SubmissionRepository submissionRepository;
+    private final LessonRepository lessonRepository;
+    private final LessonProgressRepository lessonProgressRepository;
     private final CourseMapper courseMapper;
     private final ChapterMapper chapterMapper;
     private final EnrollmentMapper enrollmentMapper;
     private final UserMapper userMapper;
 
-    public CourseService(CourseRepository courseRepository, UserRepository userRepository, ChapterRepository chapterRepository, EnrollmentRepository enrollmentRepository, AssignmentRepository assignmentRepository, SubmissionRepository submissionRepository, CourseMapper courseMapper, ChapterMapper chapterMapper, EnrollmentMapper enrollmentMapper, UserMapper userMapper) {
+    public CourseService(CourseRepository courseRepository, UserRepository userRepository, ChapterRepository chapterRepository, EnrollmentRepository enrollmentRepository, AssignmentRepository assignmentRepository, SubmissionRepository submissionRepository, LessonRepository lessonRepository, LessonProgressRepository lessonProgressRepository, CourseMapper courseMapper, ChapterMapper chapterMapper, EnrollmentMapper enrollmentMapper, UserMapper userMapper) {
         this.courseRepository = courseRepository;
         this.userRepository = userRepository;
         this.chapterRepository = chapterRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.assignmentRepository = assignmentRepository;
         this.submissionRepository = submissionRepository;
+        this.lessonRepository = lessonRepository;
+        this.lessonProgressRepository = lessonProgressRepository;
         this.courseMapper = courseMapper;
         this.chapterMapper = chapterMapper;
         this.enrollmentMapper = enrollmentMapper;
@@ -170,10 +176,29 @@ public class CourseService {
         return enrollmentRepository.findAll().stream()
                 .filter(enrollment -> enrollment.getUser() != null && userId.equals(enrollment.getUser().getId()))
                 .filter(enrollment -> enrollment.getStatus() != EnrollmentStatus.DROPPED)
-                .map(Enrollment::getCourse)
+                .map(enrollment -> {
+                    CourseResponse cr = courseMapper.toResponse(enrollment.getCourse());
+                    cr.setProgressPercent(calculateCourseProgress(enrollment.getCourse().getId(), userId));
+                    return cr;
+                })
                 .distinct()
-                .map(courseMapper::toResponse)
                 .toList();
+    }
+
+    private Double calculateCourseProgress(Long courseId, UUID userId) {
+        long totalLessons = lessonRepository.findAll().stream()
+            .filter(l -> l.getChapter() != null && l.getChapter().getCourse() != null &&
+                        courseId.equals(l.getChapter().getCourse().getId()))
+            .count();
+        if (totalLessons == 0) return 0.0;
+        long completedLessons = lessonProgressRepository.findAll().stream()
+            .filter(p -> p.getUser() != null && userId.equals(p.getUser().getId()))
+            .filter(p -> p.getLesson() != null && p.getLesson().getChapter() != null &&
+                        p.getLesson().getChapter().getCourse() != null &&
+                        courseId.equals(p.getLesson().getChapter().getCourse().getId()))
+            .filter(p -> Boolean.TRUE.equals(p.getIsCompleted()))
+            .count();
+        return Math.round((double) completedLessons * 100 / totalLessons * 10.0) / 10.0;
     }
 
     @Transactional(readOnly = true)

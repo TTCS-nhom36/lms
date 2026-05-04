@@ -16,5 +16,6 @@ public class QuestionOptionResponse {
     private Long id;
     private Long questionId;
     private String content;
+    private Boolean isCorrect;
     private Integer orderIndex;
 }

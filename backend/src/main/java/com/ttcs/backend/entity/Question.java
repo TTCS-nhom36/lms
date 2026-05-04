@@ -59,6 +59,10 @@ public class Question {
     @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<QuestionOption> options = new ArrayList<>();
 
+    @Builder.Default
+    @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<SelectedAnswer> selectedAnswers = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         if (this.score == null) {

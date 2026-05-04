@@ -10,6 +10,10 @@ import org.springframework.stereotype.Component;
 public class LessonMapper {
 
     public LessonResponse toResponse(Lesson lesson) {
+        return toResponse(lesson, null);
+    }
+
+    public LessonResponse toResponse(Lesson lesson, com.ttcs.backend.entity.LessonProgress progress) {
         if (lesson == null) {
             return null;
         }
@@ -24,6 +28,8 @@ public class LessonMapper {
                 .orderIndex(lesson.getOrderIndex())
                 .unlockConditionId(lesson.getUnlockCondition() != null ? lesson.getUnlockCondition().getId() : null)
                 .isFreePreview(lesson.getIsFreePreview())
+                .isCompleted(progress != null ? progress.getIsCompleted() : false)
+                .watchDurationSecs(progress != null ? progress.getWatchDurationSecs() : 0)
                 .createdAt(lesson.getCreatedAt())
                 .build();
     }

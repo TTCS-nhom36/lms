@@ -42,8 +42,9 @@ public class AssignmentService {
     private final AssignmentMapper assignmentMapper;
     private final QuestionMapper questionMapper;
     private final SubmissionMapper submissionMapper;
+    private final com.ttcs.backend.repository.QuizAttemptRepository quizAttemptRepository;
 
-    public AssignmentService(AssignmentRepository assignmentRepository, CourseRepository courseRepository, LessonRepository lessonRepository, UserRepository userRepository, QuestionRepository questionRepository, SubmissionRepository submissionRepository, AssignmentMapper assignmentMapper, QuestionMapper questionMapper, SubmissionMapper submissionMapper) {
+    public AssignmentService(AssignmentRepository assignmentRepository, CourseRepository courseRepository, LessonRepository lessonRepository, UserRepository userRepository, QuestionRepository questionRepository, SubmissionRepository submissionRepository, AssignmentMapper assignmentMapper, QuestionMapper questionMapper, SubmissionMapper submissionMapper, com.ttcs.backend.repository.QuizAttemptRepository quizAttemptRepository) {
         this.assignmentRepository = assignmentRepository;
         this.courseRepository = courseRepository;
         this.lessonRepository = lessonRepository;
@@ -53,6 +54,7 @@ public class AssignmentService {
         this.assignmentMapper = assignmentMapper;
         this.questionMapper = questionMapper;
         this.submissionMapper = submissionMapper;
+        this.quizAttemptRepository = quizAttemptRepository;
     }
 
     @Transactional(readOnly = true)
@@ -99,19 +101,22 @@ public class AssignmentService {
 
     public AssignmentResponse update(Long id, CreateAssignmentRequest request) {
         Assignment assignment = findAssignmentEntityById(id);
-        assignment.setLesson(request.getLessonId() != null ? findLessonById(request.getLessonId()) : null);
-        assignment.setCourse(findCourseById(request.getCourseId()));
+        // Only update course if explicitly provided (keep existing if not)
+        if (request.getCourseId() != null) {
+            assignment.setCourse(findCourseById(request.getCourseId()));
+        }
+        assignment.setLesson(request.getLessonId() != null ? findLessonById(request.getLessonId()) : assignment.getLesson());
         assignment.setTitle(request.getTitle());
         assignment.setDescription(request.getDescription());
         assignment.setType(request.getType());
         assignment.setDueDate(request.getDueDate());
-        assignment.setAllowLate(request.getAllowLate());
-        assignment.setMaxScore(request.getMaxScore());
-        assignment.setWeight(request.getWeight());
-        assignment.setTimeLimitMins(request.getTimeLimitMins());
-        assignment.setShuffleQuestions(request.getShuffleQuestions());
-        assignment.setShuffleOptions(request.getShuffleOptions());
-        // Keep existing creator if not provided, otherwise update
+        if (request.getAllowLate() != null) assignment.setAllowLate(request.getAllowLate());
+        if (request.getMaxScore() != null) assignment.setMaxScore(request.getMaxScore());
+        if (request.getWeight() != null) assignment.setWeight(request.getWeight());
+        if (request.getTimeLimitMins() != null) assignment.setTimeLimitMins(request.getTimeLimitMins());
+        if (request.getShuffleQuestions() != null) assignment.setShuffleQuestions(request.getShuffleQuestions());
+        if (request.getShuffleOptions() != null) assignment.setShuffleOptions(request.getShuffleOptions());
+        // Keep existing creator if not provided
         if (request.getCreatedById() != null) {
             assignment.setCreatedBy(findUserById(request.getCreatedById()));
         }
@@ -119,7 +124,14 @@ public class AssignmentService {
     }
 
     public void delete(Long id) {
-        assignmentRepository.delete(findAssignmentEntityById(id));
+        Assignment assignment = findAssignmentEntityById(id);
+        
+        // Delete QuizAttempts manually first to prevent FK constraint violations
+        // (SelectedAnswer references QuestionOption, so we must delete SelectedAnswers before QuestionOptions)
+        List<com.ttcs.backend.entity.QuizAttempt> attempts = quizAttemptRepository.findByAssignmentId(id);
+        quizAttemptRepository.deleteAll(attempts);
+
+        assignmentRepository.delete(assignment);
     }
 
     public QuestionResponse addQuestion(Long assignmentId, CreateQuestionRequest request) {

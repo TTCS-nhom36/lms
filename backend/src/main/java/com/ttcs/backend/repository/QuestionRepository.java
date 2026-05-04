@@ -13,6 +13,6 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
 	List<Question> findAll();
 
 	@Override
-	@EntityGraph(attributePaths = {"assignment"})
+	@EntityGraph(attributePaths = {"assignment", "options"})
 	Optional<Question> findById(Long id);
 }

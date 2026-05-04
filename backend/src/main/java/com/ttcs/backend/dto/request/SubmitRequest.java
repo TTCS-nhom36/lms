@@ -19,4 +19,5 @@ public class SubmitRequest {
     private Boolean isLate;
     private String fileUrl;
     private String linkUrl;
+    private java.math.BigDecimal autoScore;
 }

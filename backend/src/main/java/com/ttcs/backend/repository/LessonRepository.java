@@ -9,10 +9,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface LessonRepository extends JpaRepository<Lesson, Long> {
 
 	@Override
-	@EntityGraph(attributePaths = {"chapter", "unlockCondition"})
+	@EntityGraph(attributePaths = {"chapter", "chapter.course", "unlockCondition"})
 	List<Lesson> findAll();
 
 	@Override
-	@EntityGraph(attributePaths = {"chapter", "unlockCondition"})
+	@EntityGraph(attributePaths = {"chapter", "chapter.course", "unlockCondition"})
 	Optional<Lesson> findById(Long id);
 }

@@ -15,7 +15,7 @@ import { courseApi } from '../../api/courseApi';
 import { chapterApi } from '../../api/chapterApi';
 import { lessonApi } from '../../api/lessonApi';
 import { assignmentApi } from '../../api/assignmentApi';
-import { submissionApi } from '../../api/submissionApi';
+import { submissionApi, questionApi } from '../../api/submissionApi';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function CourseEditor() {
@@ -96,8 +96,9 @@ export default function CourseEditor() {
   const [questionAssignment, setQuestionAssignment] = useState(null);
   const [questionAssignmentDetails, setQuestionAssignmentDetails] = useState(null);
   const [questionLoading, setQuestionLoading] = useState(false);
-  const [questionForm, setQuestionForm] = useState({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1 });
+  const [questionForm, setQuestionForm] = useState({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] });
   const [questionSaving, setQuestionSaving] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState(null); // null = adding mode, object = editing mode
   const [showAssignmentDeleteConfirm, setShowAssignmentDeleteConfirm] = useState(false);
   const [deleteAssignmentId, setDeleteAssignmentId] = useState(null);
 
@@ -555,7 +556,12 @@ export default function CourseEditor() {
     if (!assignmentForm.title.trim()) { toast.error('Title is required'); return; }
     setSaving(true);
     try {
-      const payload = { ...assignmentForm, createdById: String(user.id), dueDate: assignmentForm.dueDate ? assignmentForm.dueDate + ':00' : null };
+      const payload = { 
+        ...assignmentForm, 
+        courseId: Number(id), // Include courseId (id is the courseId in CourseEditor)
+        createdById: String(user.id), 
+        dueDate: assignmentForm.dueDate ? assignmentForm.dueDate + ':00' : null 
+      };
       if (editingAssignment) {
         await assignmentApi.update(editingAssignment.id, payload);
         toast.success('Assignment updated');
@@ -583,10 +589,17 @@ export default function CourseEditor() {
   const openQuestionModal = async (assignment) => {
     setQuestionAssignment(assignment);
     setQuestionAssignmentDetails(null);
+    setEditingQuestion(null);
     setQuestionLoading(true);
     try {
-      const res = await assignmentApi.getById(assignment.id);
-      setQuestionAssignmentDetails(res.data);
+      const [res, qRes] = await Promise.all([
+        assignmentApi.getById(assignment.id),
+        assignmentApi.getQuestions(assignment.id)
+      ]);
+      setQuestionAssignmentDetails({
+        ...res.data,
+        questions: qRes.data || []
+      });
     } catch { setQuestionAssignmentDetails(assignment); }
     finally { setQuestionLoading(false); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); setShowQuestionModal(true); }
   };
@@ -598,21 +611,77 @@ export default function CourseEditor() {
 
     setQuestionSaving(true);
     try {
-      await assignmentApi.addQuestion(questionAssignment.id, { 
+      const res = await assignmentApi.addQuestion(questionAssignment.id, { 
         content: questionForm.content, 
         type: questionForm.type, 
         orderIndex: Number(questionForm.orderIndex), 
         score: Number(questionForm.score),
         options: questionForm.options.map((opt, idx) => ({ content: opt.content, isCorrect: opt.isCorrect, orderIndex: idx + 1 }))
       });
+      const newQuestion = res.data;
       toast.success('Question added');
       setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: (questionAssignmentDetails?.questions?.length || 0) + 2, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] });
-      const res = await assignmentApi.getById(questionAssignment.id);
-      setQuestionAssignmentDetails(res.data);
+      if (questionAssignmentDetails) {
+        setQuestionAssignmentDetails({
+          ...questionAssignmentDetails,
+          questions: [...(questionAssignmentDetails.questions || []), newQuestion]
+        });
+      }
     } catch { toast.error('Failed to add question'); }
     finally { setQuestionSaving(false); }
   };
+
+  const handleUpdateQuestion = async () => {
+    if (!editingQuestion?.id) return;
+    if (!questionForm.content.trim()) { toast.error('Question content is required'); return; }
+    if (questionForm.options.length < 2) { toast.error('At least 2 options are required'); return; }
+    if (questionForm.options.some(o => !o.content.trim())) { toast.error('Option content cannot be empty'); return; }
+    if (!questionForm.options.some(o => o.isCorrect)) { toast.error('Please select at least one correct option'); return; }
+    setQuestionSaving(true);
+    try {
+      const res = await questionApi.update(editingQuestion.id, {
+        assignmentId: questionAssignment.id,
+        content: questionForm.content,
+        type: questionForm.type,
+        orderIndex: Number(questionForm.orderIndex),
+        score: Number(questionForm.score),
+        options: questionForm.options.map((opt, idx) => ({ content: opt.content, isCorrect: opt.isCorrect, orderIndex: idx + 1 }))
+      });
+      const updated = res.data;
+      toast.success('Question updated');
+      setEditingQuestion(null);
+      setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] });
+      if (questionAssignmentDetails) {
+        setQuestionAssignmentDetails({
+          ...questionAssignmentDetails,
+          questions: questionAssignmentDetails.questions.map(q => q.id === updated.id ? updated : q)
+        });
+      }
+    } catch (error) {
+      console.error('Failed to update question:', error.response?.data || error.message);
+      toast.error(error.response?.data?.message || 'Failed to update question');
+    }
+    finally { setQuestionSaving(false); }
+  };
+
   // === Gradebook handlers ===
+  const handleDeleteQuestion = async (questionId) => {
+    if (!questionId) return;
+    try {
+      await questionApi.delete(questionId);
+      toast.success('Question deleted');
+      if (questionAssignmentDetails) {
+        setQuestionAssignmentDetails({
+          ...questionAssignmentDetails,
+          questions: questionAssignmentDetails.questions.filter(q => q.id !== questionId),
+        });
+      }
+    } catch (error) {
+      console.error('Failed to delete question:', error);
+      toast.error('Failed to delete question');
+    }
+  };
+
   const handleExportGradebook = async () => {
     setExporting(true);
     try {
@@ -1334,21 +1403,28 @@ export default function CourseEditor() {
       </Modal>
 
       {/* Question Modal */}
-      <Modal isOpen={showQuestionModal} onClose={() => setShowQuestionModal(false)} title={questionAssignment ? `Questions — ${questionAssignment.title}` : 'Manage Questions'} size="lg">
+      <Modal isOpen={showQuestionModal} onClose={() => { setShowQuestionModal(false); setEditingQuestion(null); }} title={questionAssignment ? `Questions — ${questionAssignment.title}` : 'Manage Questions'} size="lg">
         <div className="space-y-4">
           {questionLoading ? (
             <LoadingSpinner text="Loading questions..." />
           ) : (
             <>
               <div className="space-y-4">
-                <h4 className="body-emphasis text-[#1d1d1f]">Add Question</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="body-emphasis text-[#1d1d1f]">{editingQuestion ? '✏️ Edit Question' : '+ Add Question'}</h4>
+                  {editingQuestion && (
+                    <button onClick={() => { setEditingQuestion(null); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); }} className="text-[11px] text-[#86868b] hover:text-[#1d1d1f] border border-[#d2d2d7] px-2 py-1 rounded-lg transition-colors">
+                      Cancel Edit
+                    </button>
+                  )}
+                </div>
                 <div><label className="control-label block mb-2 text-[#6e6e73]">Question Content *</label><textarea rows={3} value={questionForm.content} onChange={(e) => setQuestionForm({ ...questionForm, content: e.target.value })} placeholder="Write the question content here..." /></div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="control-label block mb-2 text-[#6e6e73]">Type</label>
                     <select value={questionForm.type} onChange={(e) => {
                       const newType = e.target.value;
-                      let newOptions = [...questionForm.options];
+                      let newOptions = [...(questionForm.options || [])];
                       if (newType === 'TRUE_FALSE') {
                         newOptions = [{ content: 'True', isCorrect: true }, { content: 'False', isCorrect: false }];
                       } else if (questionForm.type === 'TRUE_FALSE') {
@@ -1370,13 +1446,13 @@ export default function CourseEditor() {
                   <div className="flex justify-between items-center mb-2">
                     <label className="control-label text-[#6e6e73]">Answers / Options *</label>
                     {questionForm.type !== 'TRUE_FALSE' && (
-                      <button onClick={() => setQuestionForm({...questionForm, options: [...questionForm.options, { content: '', isCorrect: false }]})} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
+                      <button onClick={() => setQuestionForm({...questionForm, options: [...(questionForm.options || []), { content: '', isCorrect: false }]})} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
                         <Plus size={12} className="inline mr-1"/>Add Option
                       </button>
                     )}
                   </div>
                   <div className="space-y-2">
-                    {questionForm.options?.map((opt, index) => (
+                    {(questionForm.options || []).map((opt, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <input 
                           type={questionForm.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} 
@@ -1385,9 +1461,9 @@ export default function CourseEditor() {
                           onChange={() => {
                             const newOptions = [...questionForm.options];
                             if (questionForm.type === 'MULTIPLE_CHOICE') {
-                              newOptions[index].isCorrect = !newOptions[index].isCorrect;
+                              newOptions[index] = {...newOptions[index], isCorrect: !newOptions[index].isCorrect};
                             } else {
-                              newOptions.forEach((o, i) => o.isCorrect = i === index);
+                              newOptions.forEach((o, i) => newOptions[i] = {...o, isCorrect: i === index});
                             }
                             setQuestionForm({ ...questionForm, options: newOptions });
                           }} 
@@ -1399,7 +1475,7 @@ export default function CourseEditor() {
                           disabled={questionForm.type === 'TRUE_FALSE'}
                           onChange={(e) => {
                             const newOptions = [...questionForm.options];
-                            newOptions[index].content = e.target.value;
+                            newOptions[index] = {...newOptions[index], content: e.target.value};
                             setQuestionForm({ ...questionForm, options: newOptions });
                           }}
                           className={`flex-1 text-sm py-1.5 ${opt.isCorrect ? 'border-[#0071e3] bg-[#0071e3]/5' : ''}`}
@@ -1418,21 +1494,61 @@ export default function CourseEditor() {
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 pt-3 border-t border-[#f5f5f7]">
-                  <button onClick={() => setShowQuestionModal(false)} className="btn-secondary !text-[#1d1d1f]">Close</button>
-                  <button onClick={handleAddQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50"><Plus size={14} className="inline-block mr-1" /> {questionSaving ? 'Adding...' : 'Add Question'}</button>
+                  <button onClick={() => { setShowQuestionModal(false); setEditingQuestion(null); }} className="btn-secondary !text-[#1d1d1f]">Close</button>
+                  {editingQuestion ? (
+                    <button onClick={handleUpdateQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50">
+                      {questionSaving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  ) : (
+                    <button onClick={handleAddQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50"><Plus size={14} className="inline-block mr-1" /> {questionSaving ? 'Adding...' : 'Add Question'}</button>
+                  )}
                 </div>
               </div>
               <div className="pt-4 border-t border-[#f5f5f7]">
-                <h4 className="body-emphasis text-[#1d1d1f] mb-3">Existing Questions</h4>
+                <h4 className="body-emphasis text-[#1d1d1f] mb-3">Existing Questions ({questionAssignmentDetails?.questions?.length || 0})</h4>
                 {questionAssignmentDetails?.questions?.length ? (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {questionAssignmentDetails.questions.map((q, idx) => (
-                      <div key={idx} className="p-3 bg-[#f5f5f7] rounded-lg">
-                        <div className="flex items-center justify-between mb-1 text-[11px] text-[#86868b]">
-                          <span>{q.type || 'Question'}</span>
-                          <span>Score: {q.score ?? '—'}</span>
+                      <div key={q.id || idx} className={`p-3 rounded-lg border transition-colors ${editingQuestion?.id === q.id ? 'bg-[#0071e3]/5 border-[#0071e3]/30' : 'bg-[#f5f5f7] border-transparent'}`}>
+                        <div className="flex items-center justify-between mb-2 text-[11px] text-[#86868b]">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-[#1d1d1f]">Q{idx + 1}.</span>
+                            <span className="px-1.5 py-0.5 rounded bg-white border border-[#d2d2d7]">{q.type}</span>
+                            <span>Score: {q.score ?? '—'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => {
+                                setEditingQuestion(q);
+                                setQuestionForm({
+                                  content: q.content || '',
+                                  type: q.type || 'SINGLE_CHOICE',
+                                  orderIndex: q.orderIndex || idx + 1,
+                                  score: q.score || 1,
+                                  options: q.options?.map(o => ({ content: o.content, isCorrect: o.isCorrect || false })) || [{ content: '', isCorrect: false }, { content: '', isCorrect: false }]
+                                });
+                              }} 
+                              className="text-[#0071e3] hover:bg-[#0071e3]/10 p-1 rounded transition-colors" title="Edit Question"
+                            >
+                              <Edit size={12} />
+                            </button>
+                            <button onClick={() => handleDeleteQuestion(q.id)} className="text-[#86868b] hover:text-[#ff3b30] p-1 rounded transition-colors" title="Delete Question">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
-                        <p className="body-primary text-[#1d1d1f]">{q.content || 'No content'}</p>
+                        <p className="body-primary text-[#1d1d1f] mb-2">{q.content || 'No content'}</p>
+                        {q.options && q.options.length > 0 && (
+                          <div className="space-y-1 pl-2 border-l-2 border-[#d2d2d7]">
+                            {q.options.map((opt, oi) => (
+                              <div key={opt.id || oi} className={`flex items-center gap-2 text-[12px] px-2 py-1 rounded ${opt.isCorrect ? 'bg-[#34c759]/10 text-[#1a7a34] font-medium' : 'text-[#6e6e73]'}`}>
+                                <span className={`w-3 h-3 rounded-full flex-shrink-0 ${opt.isCorrect ? 'bg-[#34c759]' : 'bg-[#d2d2d7]'}`}></span>
+                                {opt.content}
+                                {opt.isCorrect && <span className="ml-auto text-[10px] font-semibold text-[#34c759]">✓ Correct</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

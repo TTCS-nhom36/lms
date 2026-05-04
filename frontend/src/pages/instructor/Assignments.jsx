@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { assignmentApi } from '../../api/assignmentApi';
+import { questionApi } from '../../api/submissionApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import Modal from '../../components/ui/Modal';
@@ -71,24 +72,21 @@ export default function Assignments() {
     try {
       if (!user?.id) {
         toast.error('User not authenticated');
-        console.error('Missing user:', user);
         return;
       }
 
       const payload = {
         ...form,
-        createdById: String(user.id), // đảm bảo luôn là string UUID
+        courseId: Number(courseId), // always include courseId
+        createdById: String(user.id),
         dueDate: form.dueDate ? form.dueDate + ':00' : null,
       };
-
-      console.log('FINAL PAYLOAD:', payload);
 
       if (editItem) {
         if (!editItem.id) {
           toast.error('Invalid assignment ID');
           return;
         }
-
         await assignmentApi.update(editItem.id, payload);
         toast.success('Assignment updated');
       } else {
@@ -96,7 +94,6 @@ export default function Assignments() {
           toast.error('No course selected');
           return;
         }
-
         await assignmentApi.create(courseId, payload);
         toast.success('Assignment created');
       }
@@ -119,8 +116,14 @@ export default function Assignments() {
     setSelectedAssignmentDetails(null);
     setQuestionLoading(true);
     try {
-      const res = await assignmentApi.getById(assignment.id);
-      setSelectedAssignmentDetails(res.data);
+      const [res, qRes] = await Promise.all([
+        assignmentApi.getById(assignment.id),
+        assignmentApi.getQuestions(assignment.id)
+      ]);
+      setSelectedAssignmentDetails({
+        ...res.data,
+        questions: qRes.data || []
+      });
     } catch (error) {
       console.error('Failed to load assignment details:', error);
       toast.error('Failed to load assignment details');
@@ -150,13 +153,14 @@ export default function Assignments() {
         score: Number(questionForm.score),
       };
       console.log('Adding question to assignment:', selectedAssignment.id, payload);
-      await assignmentApi.addQuestion(selectedAssignment.id, payload);
+      const res = await assignmentApi.addQuestion(selectedAssignment.id, payload);
+      const newQuestion = res.data;
       toast.success('Question added');
-      setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: selectedAssignmentDetails?.questions?.length + 2 || 1, score: 1 });
+      setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: (selectedAssignmentDetails?.questions?.length || 0) + 2, score: 1 });
       if (selectedAssignmentDetails) {
         setSelectedAssignmentDetails({
           ...selectedAssignmentDetails,
-          questions: [...(selectedAssignmentDetails.questions || []), payload],
+          questions: [...(selectedAssignmentDetails.questions || []), newQuestion],
         });
       }
     } catch (error) {
@@ -164,6 +168,24 @@ export default function Assignments() {
       toast.error('Failed to add question');
     } finally {
       setQuestionSaving(false);
+    }
+  };
+
+  const handleDeleteQuestion = async (questionId) => {
+    if (!questionId) return;
+    try {
+      await questionApi.delete(questionId);
+      toast.success('Question deleted');
+      // Update local state
+      if (selectedAssignmentDetails) {
+        setSelectedAssignmentDetails({
+          ...selectedAssignmentDetails,
+          questions: selectedAssignmentDetails.questions.filter(q => q.id !== questionId),
+        });
+      }
+    } catch (error) {
+      console.error('Failed to delete question:', error);
+      toast.error('Failed to delete question');
     }
   };
 
@@ -334,10 +356,15 @@ export default function Assignments() {
                 {selectedAssignmentDetails?.questions?.length ? (
                   <div className="space-y-3">
                     {selectedAssignmentDetails.questions.map((question, index) => (
-                      <div key={index} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div key={index} className="p-3 bg-gray-50 rounded-xl border border-gray-100 relative group">
                         <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
                           <span>{question.type || 'Question'}</span>
-                          <span>Score: {question.score ?? '—'}</span>
+                          <div className="flex items-center gap-3">
+                            <span>Score: {question.score ?? '—'}</span>
+                            <button onClick={() => handleDeleteQuestion(question.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Question">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-sm text-gray-700">{question.content || 'No content available'}</p>
                       </div>
