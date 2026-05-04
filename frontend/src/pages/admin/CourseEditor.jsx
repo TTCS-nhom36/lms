@@ -124,11 +124,13 @@ export default function CourseEditor() {
     setLoading(true);
     try {
       const res = await courseApi.getById(id);
+      const courseData = res.data.course || res.data; // Fallback if it's already flat
       setCourse({
-        title: res.data.title || '',
-        description: res.data.description || '',
-        thumbnailUrl: res.data.thumbnailUrl || '',
-        status: res.data.status || 'DRAFT'
+        ...courseData,
+        title: courseData.title || '',
+        description: courseData.description || '',
+        thumbnailUrl: courseData.thumbnailUrl || '',
+        status: courseData.status || 'DRAFT'
       });
       // Load chapters, students, assignments, gradebook for this course
       loadChapters(id);
@@ -245,8 +247,8 @@ export default function CourseEditor() {
     return 'text-[#FF3B30]';
   };
 
-  // Create new chapter
-  const handleCreateChapter = async () => {
+  // Create or Update chapter
+  const handleSaveChapter = async () => {
     if (!newChapterTitle.trim()) {
       toast.error('Chapter title is required');
       return;
@@ -254,23 +256,40 @@ export default function CourseEditor() {
 
     setSaving(true);
     try {
-      const payload = {
-        title: newChapterTitle,
-        courseId: id,
-        orderIndex: chapters.length
-      };
-      await chapterApi.create(id, payload);
-      toast.success('Chapter created successfully');
+      if (editingChapter) {
+        const payload = {
+          title: newChapterTitle,
+          courseId: id,
+          orderIndex: editingChapter.orderIndex
+        };
+        await chapterApi.update(editingChapter.id, payload);
+        toast.success('Chapter updated successfully');
+      } else {
+        const payload = {
+          title: newChapterTitle,
+          courseId: id,
+          orderIndex: chapters.length
+        };
+        await chapterApi.create(id, payload);
+        toast.success('Chapter created successfully');
+      }
       setNewChapterTitle('');
+      setEditingChapter(null);
       setShowChapterModal(false);
       await loadChapters(id);
     } catch (error) {
-      console.error('Create chapter error:', error);
-      const message = error.response?.data?.message || 'Failed to create chapter';
+      console.error('Save chapter error:', error);
+      const message = error.response?.data?.message || 'Failed to save chapter';
       toast.error(message);
     } finally {
       setSaving(false);
     }
+  };
+
+  const openEditChapterModal = (chapter) => {
+    setEditingChapter(chapter);
+    setNewChapterTitle(chapter.title);
+    setShowChapterModal(true);
   };
 
   // Delete chapter
@@ -718,7 +737,7 @@ export default function CourseEditor() {
         description: course.description,
         thumbnailUrl: course.thumbnailUrl,
         status: course.status,
-        createdById: user.id
+        createdById: course.createdById || user.id
       };
 
       if (isNew) {
@@ -801,21 +820,23 @@ export default function CourseEditor() {
             <span className="px-3 py-1 rounded-[6px] bg-[#f5f5f7] border border-[#d2d2d7] text-[11px] font-semibold text-[#6e6e73] uppercase tracking-widest mt-2">{course.status}</span>
           </div>
         </div>
-        <div className="flex gap-3">
-          {!isNew && (
-            <button 
-              onClick={() => setShowDeleteCourseConfirm(true)} 
-              disabled={saving} 
-              className="btn-secondary !text-[#ff3b30] hover:!bg-[#ff3b30]/10 border-[#ff3b30]/30 disabled:opacity-50"
-            >
-              Delete Course
+        {activeTab === 'settings' && (
+          <div className="flex gap-3">
+            {!isNew && (
+              <button 
+                onClick={() => setShowDeleteCourseConfirm(true)} 
+                disabled={saving} 
+                className="btn-secondary !text-[#ff3b30] hover:!bg-[#ff3b30]/10 border-[#ff3b30]/30 disabled:opacity-50"
+              >
+                Delete Course
+              </button>
+            )}
+            <button onClick={() => navigate('/admin/courses')} disabled={saving} className="btn-secondary !text-[#1d1d1f] disabled:opacity-50">Discard</button>
+            <button onClick={handleSave} disabled={saving} className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+              <Save size={16} /> {saving ? 'Saving...' : 'Apply Changes'}
             </button>
-          )}
-          <button onClick={() => navigate('/admin/courses')} disabled={saving} className="btn-secondary !text-[#1d1d1f] disabled:opacity-50">Discard</button>
-          <button onClick={handleSave} disabled={saving} className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
-            <Save size={16} /> {saving ? 'Saving...' : 'Apply Changes'}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Segmented Control logic mimicking Apple tab filtering */}
@@ -835,30 +856,95 @@ export default function CourseEditor() {
       {/* Tab Panels */}
       <div className="space-y-12">
         {activeTab === 'settings' && (
-          <div className="animate-slide-up grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-12">
-            <div className="space-y-8">
-              <div>
-                <h3 className="utility-heading text-[#1d1d1f] mb-4">Identity</h3>
-                <div className="space-y-5">
-                  <div>
-                    <label className="control-label block mb-2 text-[#6e6e73]">Course Title *</label>
-                    <input type="text" value={course.title} onChange={(e) => setCourse({ ...course, title: e.target.value })} placeholder="e.g., Advanced System Design" className="!text-[17px] !p-4" />
+          <div className="animate-slide-up grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8">
+            <div className="space-y-6">
+              <div className="apple-card p-8">
+                <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[#f5f5f7]">
+                  <div className="w-10 h-10 rounded-xl bg-[#0071e3]/10 flex items-center justify-center text-[#0071e3]">
+                    <BookOpen size={20} />
                   </div>
                   <div>
-                    <label className="control-label block mb-2 text-[#6e6e73]">Full Editorial Description</label>
-                    <textarea rows={6} value={course.description} onChange={(e) => setCourse({ ...course, description: e.target.value })} placeholder="Full narrative describing the course material..." />
+                    <h3 className="text-[19px] font-semibold text-[#1d1d1f]">Course Identity</h3>
+                    <p className="text-[13px] text-[#6e6e73]">Define the core metadata for your educational program.</p>
                   </div>
+                </div>
+
+                <div className="space-y-6">
                   <div>
-                    <label className="control-label block mb-2 text-[#6e6e73]">Thumbnail URL</label>
-                    <input type="url" value={course.thumbnailUrl} onChange={(e) => setCourse({ ...course, thumbnailUrl: e.target.value })} placeholder="https://example.com/image.jpg" className="w-full" />
+                    <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Course Title *</label>
+                    <input 
+                      type="text" 
+                      value={course.title} 
+                      onChange={(e) => setCourse({ ...course, title: e.target.value })} 
+                      placeholder="e.g., Mastering Modern UI Design" 
+                      className="!text-[16px] !p-4 !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all" 
+                    />
                   </div>
+                  
                   <div>
-                    <label className="control-label block mb-2 text-[#6e6e73]">Course Status</label>
-                    <select value={course.status} onChange={(e) => setCourse({ ...course, status: e.target.value })} className="w-full">
-                      <option value="DRAFT">Draft</option>
-                      <option value="PUBLISHED">Published</option>
-                      <option value="ARCHIVED">Archived</option>
-                    </select>
+                    <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Editorial Description</label>
+                    <textarea 
+                      rows={6} 
+                      value={course.description} 
+                      onChange={(e) => setCourse({ ...course, description: e.target.value })} 
+                      placeholder="Describe the learning outcomes and target audience..." 
+                      className="!text-[15px] !p-4 !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Thumbnail URL</label>
+                        <input 
+                          type="url" 
+                          value={course.thumbnailUrl} 
+                          onChange={(e) => setCourse({ ...course, thumbnailUrl: e.target.value })} 
+                          placeholder="https://images.unsplash.com/..." 
+                          className="!bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all" 
+                        />
+                      </div>
+                      {course.thumbnailUrl && (
+                        <div className="relative group overflow-hidden rounded-xl border border-[#f5f5f7] bg-white aspect-video flex items-center justify-center">
+                          <img 
+                            src={course.thumbnailUrl} 
+                            alt="Course Preview" 
+                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                            onError={(e) => e.target.src = 'https://placehold.co/600x400?text=Invalid+Image+URL'}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-6">
+                      <div>
+                        <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Initial Status</label>
+                        <select 
+                          value={course.status} 
+                          onChange={(e) => setCourse({ ...course, status: e.target.value })} 
+                          className="w-full !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all"
+                        >
+                          <option value="DRAFT">Draft</option>
+                          <option value="PUBLISHED">Published</option>
+                          <option value="ARCHIVED">Archived</option>
+                        </select>
+                      </div>
+
+                      {!isNew && (
+                        <div className="p-4 rounded-xl bg-[#0071e3]/5 border border-[#0071e3]/10">
+                          <h4 className="text-[12px] font-bold text-[#0071e3] uppercase tracking-wider mb-2">Structure Overview</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-[20px] font-bold text-[#1d1d1f]">{chapters.length}</p>
+                              <p className="text-[11px] text-[#6e6e73]">Chapters</p>
+                            </div>
+                            <div>
+                              <p className="text-[20px] font-bold text-[#1d1d1f]">{chapters.reduce((acc, c) => acc + (c.lessons?.length || 0), 0)}</p>
+                              <p className="text-[11px] text-[#6e6e73]">Total Lessons</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -959,6 +1045,13 @@ export default function CourseEditor() {
                         >
                           <Plus size={18} />
                         </button>
+                         <button
+                          onClick={() => openEditChapterModal(chapter)}
+                          className="p-2 hover:bg-[#f5f5f7] rounded-lg transition-colors text-[#0071e3]"
+                          title="Edit chapter"
+                        >
+                          <Edit size={18} />
+                        </button>
                         <button
                           onClick={() => handleDeleteChapter(chapter.id)}
                           disabled={saving}
@@ -1048,9 +1141,11 @@ export default function CourseEditor() {
                       <span>Max: {a.maxScore}</span>
                     </div>
                     <div className="flex items-center gap-1 pt-3 border-t border-[#f5f5f7]">
-                      <button onClick={() => openQuestionModal(a)} className="px-3 py-1.5 rounded-lg text-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-[11px] font-semibold">
-                        <Plus size={12} className="inline-block mr-1" /> Questions
-                      </button>
+                      {a.type === 'QUIZ' && (
+                        <button onClick={() => openQuestionModal(a)} className="px-3 py-1.5 rounded-lg text-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-[11px] font-semibold">
+                          <Plus size={12} className="inline-block mr-1" /> Questions
+                        </button>
+                      )}
                       <button onClick={() => navigate(`/admin/courses/${id}/submissions/${a.id}`)} className="px-3 py-1.5 rounded-lg text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors text-[11px] font-semibold flex items-center gap-1" title="View Submissions">
                         <Eye size={12} /> View Submissions
                       </button>
@@ -1147,11 +1242,12 @@ export default function CourseEditor() {
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-[18px] shadow-xl max-w-md w-full p-8 animate-slide-up">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="utility-heading text-[#1d1d1f]">Create Chapter</h3>
+              <h3 className="utility-heading text-[#1d1d1f]">{editingChapter ? 'Edit Chapter' : 'Create Chapter'}</h3>
               <button
                 onClick={() => {
                   setShowChapterModal(false);
                   setNewChapterTitle('');
+                  setEditingChapter(null);
                 }}
                 className="text-[#86868b] hover:text-[#1d1d1f] transition-colors"
               >
@@ -1168,7 +1264,7 @@ export default function CourseEditor() {
                   onChange={(e) => setNewChapterTitle(e.target.value)}
                   placeholder="e.g., Chapter 1: Introduction"
                   className="w-full"
-                  onKeyPress={(e) => e.key === 'Enter' && handleCreateChapter()}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSaveChapter()}
                 />
               </div>
             </div>
@@ -1178,6 +1274,7 @@ export default function CourseEditor() {
                 onClick={() => {
                   setShowChapterModal(false);
                   setNewChapterTitle('');
+                  setEditingChapter(null);
                 }}
                 disabled={saving}
                 className="btn-secondary flex-1 !text-[#1d1d1f] disabled:opacity-50"
@@ -1185,7 +1282,7 @@ export default function CourseEditor() {
                 Cancel
               </button>
               <button
-                onClick={handleCreateChapter}
+                onClick={handleSaveChapter}
                 disabled={saving || !newChapterTitle.trim()}
                 className="btn-primary flex-1 disabled:opacity-50"
               >

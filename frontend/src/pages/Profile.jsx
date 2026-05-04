@@ -6,7 +6,7 @@ import { User, Lock, Save } from 'lucide-react';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 export default function Profile() {
-  const { user, login } = useAuth();
+  const { user, setUser } = useAuth();
   const toast = useToast();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,7 @@ export default function Profile() {
     try {
       const res = await userApi.updateMe(form);
       setProfile(res.data);
-      login({ ...user, fullName: res.data.fullName, avatarUrl: res.data.avatarUrl });
+      setUser(res.data);
       toast.success('Profile updated');
     } catch { toast.error('Failed to update profile'); }
     finally { setSaving(false); }
@@ -58,8 +58,12 @@ export default function Profile() {
       <div className="card p-6 mb-5 relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-r from-red-50 to-rose-100" />
         <div className="relative flex items-end gap-4 mt-6">
-          <div className="w-16 h-16 rounded-xl bg-red-500 flex items-center justify-center text-2xl font-bold text-white shadow-md">
-            {dp?.fullName?.charAt(0) || '?'}
+          <div className="w-16 h-16 rounded-xl bg-red-500 overflow-hidden flex items-center justify-center text-2xl font-bold text-white shadow-md">
+            {dp?.avatarUrl ? (
+              <img src={dp.avatarUrl} alt={dp.fullName} className="w-full h-full object-cover" />
+            ) : (
+              dp?.fullName?.charAt(0) || '?'
+            )}
           </div>
           <div>
             <h2 className="text-xl font-bold text-gray-900">{dp?.fullName}</h2>
