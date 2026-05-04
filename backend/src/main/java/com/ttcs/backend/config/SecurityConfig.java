@@ -31,8 +31,6 @@ public class SecurityConfig {
             "/api/lms/auth/login",
             "/api/lms/auth/refresh",
             "/api/lms/auth/logout",
-            "/v1/vnpay/return",
-            "/v1/vnpay/ipn",
             "/api/lms/auth/forgot-password",
             "/api/lms/auth/reset-password"
     };

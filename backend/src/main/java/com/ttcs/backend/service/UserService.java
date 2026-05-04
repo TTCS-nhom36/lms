@@ -108,7 +108,9 @@ public class UserService {
             throw new AppException(ErrorCode.BAD_REQUEST, "Email đã tồn tại");
         }
         user.setEmail(request.getEmail());
-        user.setPasswordHash(request.getPasswordHash());
+        if (request.getPasswordHash() != null && !request.getPasswordHash().isBlank()) {
+            user.setPasswordHash(passwordEncoder.encode(request.getPasswordHash()));
+        }
         user.setFullName(request.getFullName());
         user.setPhone(request.getPhone());
         user.setAvatarUrl(request.getAvatarUrl());
