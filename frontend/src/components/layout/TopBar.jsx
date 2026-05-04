@@ -104,7 +104,13 @@ export default function TopBar() {
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
-          <span className="app-topbar__avatar">{initials}</span>
+          <span className="app-topbar__avatar overflow-hidden">
+            {user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
+            ) : (
+              initials
+            )}
+          </span>
           <ChevronDown size={14} className="app-topbar__chevron" />
         </button>
 
