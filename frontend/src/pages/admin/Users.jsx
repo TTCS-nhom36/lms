@@ -173,6 +173,17 @@ export default function AdminUsers() {
               <input type="password" value={form.passwordHash} onChange={(e) => setForm({ ...form, passwordHash: e.target.value })} />
             </div>
           )}
+          {editUser && (
+            <div>
+              <label className="control-label block mb-2 text-[#6e6e73]">New Password</label>
+              <input
+                type="password"
+                placeholder="Leave blank to keep current password"
+                value={form.passwordHash}
+                onChange={(e) => setForm({ ...form, passwordHash: e.target.value })}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="control-label block mb-2 text-[#6e6e73]">Full Name</label>
