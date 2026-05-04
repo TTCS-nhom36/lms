@@ -14,6 +14,8 @@ import LessonViewer from './pages/LessonViewer';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminUsers from './pages/admin/Users';
 import AdminCourses from './pages/admin/Courses';
+import AdminCourseEditor from './pages/admin/CourseEditor';
+import AdminSubmissions from './pages/admin/Submissions';
 
 // Instructor
 import InstructorDashboard from './pages/instructor/Dashboard';
@@ -56,6 +58,9 @@ function App() {
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/courses" element={<AdminCourses />} />
+              <Route path="/admin/courses/new" element={<AdminCourseEditor />} />
+              <Route path="/admin/courses/:id/edit" element={<AdminCourseEditor />} />
+              <Route path="/admin/courses/:courseId/submissions/:assignmentId" element={<AdminSubmissions />} />
               <Route path="/admin/courses/:id" element={<CourseDetail />} />
 
               {/* Instructor */}
