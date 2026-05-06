@@ -32,7 +32,8 @@ public class SecurityConfig {
             "/api/lms/auth/refresh",
             "/api/lms/auth/logout",
             "/api/lms/auth/forgot-password",
-            "/api/lms/auth/reset-password"
+            "/api/lms/auth/reset-password",
+            "/api/lms/courses/s3-image"
     };
 
     private final CustomUserDetailService userDetailsService;

@@ -4,7 +4,6 @@ import com.ttcs.backend.dto.request.UpdateLessonProgressRequest;
 import com.ttcs.backend.dto.request.CreateLessonRequest;
 import com.ttcs.backend.dto.response.LessonProgressResponse;
 import com.ttcs.backend.dto.response.LessonResponse;
-import com.ttcs.backend.entity.Enrollment;
 import com.ttcs.backend.entity.Chapter;
 import com.ttcs.backend.entity.LessonProgress;
 import com.ttcs.backend.entity.Lesson;
@@ -22,10 +21,13 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional
 public class LessonService {
+
+    private static final long MAX_DOCUMENT_SIZE = 25 * 1024 * 1024L; // 25 MB
 
     private final LessonRepository lessonRepository;
     private final ChapterRepository chapterRepository;
@@ -34,8 +36,9 @@ public class LessonService {
     private final UserRepository userRepository;
     private final LessonMapper lessonMapper;
     private final LessonProgressMapper lessonProgressMapper;
+    private final S3Service s3Service;
 
-    public LessonService(LessonRepository lessonRepository, ChapterRepository chapterRepository, LessonProgressRepository lessonProgressRepository, EnrollmentRepository enrollmentRepository, UserRepository userRepository, LessonMapper lessonMapper, LessonProgressMapper lessonProgressMapper) {
+    public LessonService(LessonRepository lessonRepository, ChapterRepository chapterRepository, LessonProgressRepository lessonProgressRepository, EnrollmentRepository enrollmentRepository, UserRepository userRepository, LessonMapper lessonMapper, LessonProgressMapper lessonProgressMapper, S3Service s3Service) {
         this.lessonRepository = lessonRepository;
         this.chapterRepository = chapterRepository;
         this.lessonProgressRepository = lessonProgressRepository;
@@ -43,6 +46,7 @@ public class LessonService {
         this.userRepository = userRepository;
         this.lessonMapper = lessonMapper;
         this.lessonProgressMapper = lessonProgressMapper;
+        this.s3Service = s3Service;
     }
 
     @Transactional(readOnly = true)
@@ -111,6 +115,48 @@ public class LessonService {
 
     public void delete(Long id) {
         lessonRepository.delete(findLessonEntityById(id));
+    }
+
+    /**
+     * Upload a PDF document to S3.
+     * Validates: only application/pdf, max 25 MB.
+     *
+     * @param file the uploaded file
+     * @return S3 key of the stored document
+     */
+    public String uploadDocument(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "No file provided");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.equals("application/pdf")) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Only PDF files are accepted");
+        }
+        if (file.getSize() > MAX_DOCUMENT_SIZE) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "File size must not exceed 25 MB");
+        }
+        return s3Service.uploadFile(file, "lesson-documents");
+    }
+
+    /**
+     * Generate a presigned download URL for a DOCUMENT lesson.
+     * Checks that the user has access to the lesson.
+     *
+     * @param lessonId the lesson ID
+     * @param userId   the requesting user (may be null for unauthenticated)
+     * @return presigned S3 URL valid for 1 hour
+     */
+    @Transactional(readOnly = true)
+    public String getDocumentPresignedUrl(Long lessonId, UUID userId) {
+        Lesson lesson = findLessonEntityById(lessonId);
+        if (!Boolean.TRUE.equals(lesson.getIsFreePreview()) && !hasAccess(lesson, userId)) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Lesson requires enrollment");
+        }
+        String s3Key = lesson.getContentUrl();
+        if (s3Key == null || s3Key.isBlank()) {
+            throw new AppException(ErrorCode.NOT_FOUND, "No document attached to this lesson");
+        }
+        return s3Service.getPresignedUrl(s3Key);
     }
 
     public LessonProgressResponse completeLesson(Long lessonId, UUID userId) {

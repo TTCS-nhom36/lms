@@ -6,7 +6,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import StatusBadge from '../components/ui/StatusBadge';
 import {
   ArrowLeft, Video, FileText, Link as LinkIcon,
-  CheckCircle, ExternalLink, Clock, BookOpen, Timer,
+  CheckCircle, ExternalLink, Clock, BookOpen, Timer, Download,
 } from 'lucide-react';
 
 // Estimate lesson "length" for progress bar (seconds). Used only for non-video content.
@@ -30,6 +30,7 @@ export default function LessonViewer() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [documentUrl, setDocumentUrl] = useState(null); // presigned URL for DOCUMENT lessons
 
   // Progress state
   const [progress, setProgress] = useState({ isCompleted: false, watchDurationSecs: 0 });
@@ -74,6 +75,15 @@ export default function LessonViewer() {
       setProgress(initial);
       watchSecsRef.current = initial.watchDurationSecs;
       isCompletedRef.current = initial.isCompleted;
+      // Fetch presigned URL for DOCUMENT lessons
+      if (data.contentType === 'DOCUMENT' && data.contentUrl) {
+        try {
+          const urlRes = await lessonApi.getDocumentUrl(data.id);
+          setDocumentUrl(urlRes.data.url);
+        } catch {
+          console.warn('Could not fetch document presigned URL');
+        }
+      }
     } catch {
       toast.error('Không thể tải bài học');
     } finally {
@@ -290,14 +300,31 @@ export default function LessonViewer() {
       case 'NOTEBOOK':
         return (
           <div className="glass-card p-6 space-y-4">
-            {lesson.contentUrl && (
+            {lesson.contentType === 'DOCUMENT' && (
+              documentUrl ? (
+                <a
+                  href={documentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#0071e3] text-white font-semibold text-sm hover:bg-[#0077ed] transition-colors shadow-sm"
+                >
+                  <Download size={18} /> Tải tài liệu về
+                </a>
+              ) : lesson.contentUrl ? (
+                <p className="text-sm text-neutral-400">Đang tải liên kết tài liệu...</p>
+              ) : (
+                <p className="text-neutral-400 text-sm">Chưa có tài liệu đính kèm.</p>
+              )
+            )}
+            {lesson.contentType === 'NOTEBOOK' && lesson.contentUrl && (
               <a
                 href={lesson.contentUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors font-medium text-sm"
               >
-                <ExternalLink size={16} /> Mở tài liệu
+                <ExternalLink size={16} /> Mở Notebook
               </a>
             )}
             {lesson.contentText && (

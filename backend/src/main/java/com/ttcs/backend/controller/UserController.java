@@ -11,6 +11,7 @@ import com.ttcs.backend.service.UserService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import java.util.UUID;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/lms/users")
@@ -87,5 +89,16 @@ public class UserController {
         UserResponse user = userService.findByEmail(jwt.getSubject());
         userService.changePassword(user.getId(), request);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Upload avatar image to S3 and update profile.
+     * Accepts: image/* (PNG, JPG, etc.) up to 5 MB.
+     */
+    @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<UserResponse> uploadAvatar(@AuthenticationPrincipal Jwt jwt,
+                                                      @RequestParam("file") MultipartFile file) {
+        UserResponse user = userService.findByEmail(jwt.getSubject());
+        return ResponseEntity.ok(userService.uploadAvatar(user.getId(), file));
     }
 }
