@@ -1,0 +1,48 @@
+package com.ttcs.backend.controller;
+
+import com.ttcs.backend.dto.request.CreateAttemptRequest;
+import com.ttcs.backend.dto.request.SubmitQuizRequest;
+import com.ttcs.backend.dto.response.QuizAttemptResponse;
+import com.ttcs.backend.dto.response.SubmitQuizResponse;
+import com.ttcs.backend.service.QuizAttemptService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/lms/quiz-attempts")
+public class QuizAttemptController {
+
+    private final QuizAttemptService quizAttemptService;
+    private final com.ttcs.backend.service.CurrentUserService currentUserService;
+
+    public QuizAttemptController(QuizAttemptService quizAttemptService, com.ttcs.backend.service.CurrentUserService currentUserService) {
+        this.quizAttemptService = quizAttemptService;
+        this.currentUserService = currentUserService;
+    }
+
+    @PostMapping
+    public ResponseEntity<QuizAttemptResponse> createAttempt(@RequestBody CreateAttemptRequest request) {
+        return ResponseEntity.ok(quizAttemptService.createAttempt(request));
+    }
+
+    @PostMapping("/submit")
+    public ResponseEntity<SubmitQuizResponse> submitQuiz(@RequestBody SubmitQuizRequest request) {
+        return ResponseEntity.ok(quizAttemptService.submitQuiz(request));
+    }
+
+    @GetMapping("/{id}/result")
+    public ResponseEntity<SubmitQuizResponse> getAttemptResult(@PathVariable Long id) {
+        return ResponseEntity.ok(quizAttemptService.getAttemptResult(id));
+    }
+
+    @GetMapping("/assignment/{assignmentId}/my-attempt")
+    public ResponseEntity<SubmitQuizResponse> getMyAttempt(@PathVariable Long assignmentId) {
+        java.util.UUID userId = currentUserService.getCurrentUserId();
+        return ResponseEntity.ok(quizAttemptService.getMyAttempt(assignmentId, userId));
+    }
+}
