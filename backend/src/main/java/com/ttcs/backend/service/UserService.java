@@ -13,6 +13,7 @@ import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.UserMapper;
 import com.ttcs.backend.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.multipart.MultipartFile;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -23,14 +24,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class UserService {
 
+    private static final long MAX_AVATAR_SIZE = 5 * 1024 * 1024L; // 5 MB
+
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final S3Service s3Service;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, S3Service s3Service) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.s3Service = s3Service;
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +80,28 @@ public class UserService {
         user.setFullName(request.getFullName());
         user.setPhone(request.getPhone());
         user.setAvatarUrl(request.getAvatarUrl());
+        return userMapper.toResponse(userRepository.save(user));
+    }
+
+    /**
+     * Upload an avatar image to S3 and update the user's avatarUrl.
+     * Validates: image/* content type, max 5 MB.
+     */
+    public UserResponse uploadAvatar(UUID id, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "No file provided");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Only image files are accepted");
+        }
+        if (file.getSize() > MAX_AVATAR_SIZE) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Avatar image must not exceed 5 MB");
+        }
+        String s3Key = s3Service.uploadFile(file, "avatars");
+        String publicUrl = s3Service.getFileUrl(s3Key);
+        User user = findUserEntityById(id);
+        user.setAvatarUrl(publicUrl);
         return userMapper.toResponse(userRepository.save(user));
     }
 

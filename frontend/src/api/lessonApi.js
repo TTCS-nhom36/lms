@@ -8,4 +8,12 @@ export const lessonApi = {
   delete: (id) => api.delete(`/lessons/${id}`),
   complete: (id) => api.post(`/lessons/${id}/complete`),
   updateProgress: (id, data) => api.put(`/lessons/${id}/progress`, data),
+  uploadDocument: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/lessons/upload-document', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  getDocumentUrl: (id) => api.get(`/lessons/${id}/document-url`),
 };

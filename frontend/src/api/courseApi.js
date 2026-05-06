@@ -12,4 +12,12 @@ export const courseApi = {
   getMyCourses: () => api.get('/courses/my-courses'),
   getGradebook: (id) => api.get(`/courses/${id}/gradebook`),
   exportGradebook: (id) => api.get(`/courses/${id}/gradebook/export`, { responseType: 'blob' }),
+  uploadThumbnail: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/courses/upload-thumbnail', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
+
