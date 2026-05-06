@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { assignmentApi } from '../../api/assignmentApi';
+import { submissionApi } from '../../api/submissionApi';
 import { quizAttemptApi } from '../../api/quizAttemptApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -10,7 +11,7 @@ import Modal from '../../components/ui/Modal';
 import {
   ArrowLeft, ClipboardList, Upload, Link as LinkIcon,
   Calendar, Clock, CheckCircle, Send, PlayCircle,
-  RefreshCw, AlertTriangle, Timer
+  RefreshCw, AlertTriangle, Timer, Download, X, FileText, Loader2
 } from 'lucide-react';
 
 export default function AssignmentView() {
@@ -27,6 +28,13 @@ export default function AssignmentView() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitForm, setSubmitForm] = useState({ fileUrl: '', linkUrl: '' });
   const [submitting, setSubmitting] = useState(false);
+  // File upload state
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [uploadedS3Key, setUploadedS3Key] = useState('');
+  const fileInputRef = useRef(null);
+  // Submission file download URL
+  const [submissionFileUrl, setSubmissionFileUrl] = useState(null);
 
   // Quiz State
   const [quizResult, setQuizResult] = useState(null);
@@ -64,6 +72,13 @@ export default function AssignmentView() {
         try {
           const sRes = await assignmentApi.getMySubmission(id);
           setMySubmission(sRes.data);
+          // Fetch download URL if a file was submitted
+          if (sRes.data?.id && sRes.data?.fileUrl) {
+            try {
+              const urlRes = await submissionApi.getFileUrl(sRes.data.id);
+              setSubmissionFileUrl(urlRes.data.url);
+            } catch { /* file might not exist yet */ }
+          }
         } catch {
           setMySubmission(null);
         }
@@ -171,17 +186,40 @@ export default function AssignmentView() {
   };
 
   const handleSubmitFileLink = async () => {
+    // For FILE_UPLOAD, require a file to have been uploaded
+    if (assignment.type === 'FILE_UPLOAD' && !uploadedS3Key) {
+      toast.error('Vui lòng chọn file để nộp');
+      return;
+    }
     setSubmitting(true);
     try {
-      await assignmentApi.submit(id, submitForm);
-      toast.success('Submitted successfully! 🎉');
+      const payload = assignment.type === 'FILE_UPLOAD'
+        ? { fileUrl: uploadedS3Key }
+        : submitForm;
+      await assignmentApi.submit(id, payload);
+      toast.success('Nộp bài thành công! 🎉');
       setShowSubmitModal(false);
+      setUploadedS3Key('');
+      setUploadedFileName('');
       loadData();
     } catch {
-      toast.error('Failed to submit');
+      toast.error('Nộp bài thất bại');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleFileSelect = async (file) => {
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) { toast.error('File không được vượt quá 50 MB'); return; }
+    setUploadingFile(true);
+    try {
+      const res = await submissionApi.uploadFile(file);
+      setUploadedS3Key(res.data.s3Key);
+      setUploadedFileName(file.name);
+      toast.success('Tải file thành công');
+    } catch { toast.error('Tải file thất bại'); }
+    finally { setUploadingFile(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
 
   const formatTime = (seconds) => {
@@ -366,10 +404,20 @@ export default function AssignmentView() {
             </div>
             {mySubmission.fileUrl && (
               <div>
-                <span className="text-xs text-neutral-400 block mb-1">File</span>
-                <a href={mySubmission.fileUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1 break-all">
-                  <Upload size={14} /> {mySubmission.fileUrl}
-                </a>
+                <span className="text-xs text-neutral-400 block mb-1">File đã nộp</span>
+                {submissionFileUrl ? (
+                  <a
+                    href={submissionFileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors font-medium text-sm"
+                  >
+                    <Download size={15} /> Tải file về
+                  </a>
+                ) : (
+                  <span className="text-sm text-neutral-400">Đang tải liên kết...</span>
+                )}
               </div>
             )}
             {mySubmission.linkUrl && (
@@ -496,8 +544,53 @@ export default function AssignmentView() {
         <div className="space-y-4">
           {assignment.type === 'FILE_UPLOAD' && (
             <div>
-              <label className="text-sm font-medium text-neutral-500 mb-1.5 block">File URL</label>
-              <input type="url" value={submitForm.fileUrl} onChange={(e) => setSubmitForm({ ...submitForm, fileUrl: e.target.value })} placeholder="https://drive.google.com/..." className="w-full" />
+              <label className="text-sm font-medium text-neutral-700 mb-2 block">File nộp bài <span className="text-neutral-400 font-normal">(tối đa 50 MB)</span></label>
+              {uploadedS3Key ? (
+                /* File already uploaded */
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <FileText size={20} className="text-emerald-500 shrink-0" />
+                  <span className="text-sm text-emerald-800 truncate flex-1">{uploadedFileName}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setUploadedS3Key(''); setUploadedFileName(''); }}
+                    className="p-1 hover:bg-emerald-100 rounded-lg transition-colors text-emerald-700"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                /* Upload area */
+                <div
+                  className="border-2 border-dashed border-neutral-200 rounded-xl p-6 text-center hover:border-primary-300 hover:bg-primary-50/30 transition-all cursor-pointer"
+                  onClick={() => !uploadingFile && fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-400', 'bg-primary-50/50'); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-primary-400', 'bg-primary-50/50'); }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('border-primary-400', 'bg-primary-50/50');
+                    await handleFileSelect(e.dataTransfer.files[0]);
+                  }}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => handleFileSelect(e.target.files[0])}
+                  />
+                  {uploadingFile ? (
+                    <div className="flex flex-col items-center gap-2 py-2">
+                      <Loader2 size={24} className="animate-spin text-primary-500" />
+                      <p className="text-sm text-primary-500 font-medium">Đang tải lên...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={24} className="mx-auto text-neutral-400 mb-2" />
+                      <p className="text-sm font-medium text-neutral-700">Kéo thả file vào đây hoặc click để chọn</p>
+                      <p className="text-xs text-neutral-400 mt-1">Chấp nhận mọi định dạng • Tối đa 50 MB</p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {assignment.type === 'LINK_SUBMIT' && (

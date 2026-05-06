@@ -27,7 +27,8 @@ export default function CourseEditor() {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('settings');
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+  const [activeTab, setActiveTab] = useState('curriculum');
   const [course, setCourse] = useState({
     title: '',
     description: '',
@@ -52,6 +53,8 @@ export default function CourseEditor() {
   const [lessonQuestions, setLessonQuestions] = useState([]);
 
   const [lessonDocumentUrl, setLessonDocumentUrl] = useState('');
+  const [lessonDocumentFileName, setLessonDocumentFileName] = useState('');
+  const [uploadingDocument, setUploadingDocument] = useState(false);
   const [lessonLinkUrl, setLessonLinkUrl] = useState('');
   const [lessonNotebookUrl, setLessonNotebookUrl] = useState('');
   //Editting chapter
@@ -67,6 +70,7 @@ export default function CourseEditor() {
     setLessonTextContent('');
     setLessoncontentUrl('');
     setLessonDocumentUrl('');
+    setLessonDocumentFileName('');
     setLessonLinkUrl('');
     setLessonNotebookUrl('');
     setSelectedChapterId(null);
@@ -488,7 +492,11 @@ export default function CourseEditor() {
     }
 
     if (lesson.contentType === "DOCUMENT") {
-      setLessonDocumentUrl(lesson.contentUrl || "");
+      setLessonDocumentUrl(lesson.contentUrl || '');
+      const key = lesson.contentUrl || '';
+      const parts = key.split('_');
+      const name = parts.length > 1 ? parts.slice(1).join('_') : key.split('/').pop();
+      setLessonDocumentFileName(name || '');
     }
 
     if (lesson.contentType === "LINK") {
@@ -794,10 +802,10 @@ export default function CourseEditor() {
   if (loading) return <LoadingSpinner text="Loading course..." />;
 
   const tabs = [
-    { id: 'settings', label: 'Primary Settings' },
     { id: 'curriculum', label: 'Curriculum Model' },
     { id: 'assignments', label: 'Assignments' },
     { id: 'students', label: 'Students' },
+    { id: 'settings', label: 'Primary Settings' },
   ];
 
   const contentTypeIcon = (type) => {
@@ -894,25 +902,106 @@ export default function CourseEditor() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div>
-                        <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Thumbnail URL</label>
-                        <input 
-                          type="url" 
-                          value={course.thumbnailUrl} 
-                          onChange={(e) => setCourse({ ...course, thumbnailUrl: e.target.value })} 
-                          placeholder="https://images.unsplash.com/..." 
-                          className="!bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all" 
-                        />
+                        <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Course Thumbnail</label>
+                        {!course.thumbnailUrl ? (
+                          <div
+                            className="relative border-2 border-dashed border-[#d2d2d7] rounded-xl p-6 text-center hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-all cursor-pointer"
+                            onClick={() => document.getElementById('instructor-thumbnail-upload').click()}
+                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5');
+                              const file = e.dataTransfer.files[0];
+                              if (!file) return;
+                              if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+                              setUploadingThumbnail(true);
+                              try {
+                                const res = await courseApi.uploadThumbnail(file);
+                                setCourse(prev => ({ ...prev, thumbnailUrl: res.data.url }));
+                                toast.success('Thumbnail uploaded — click Apply Changes to save');
+                              } catch { toast.error('Failed to upload thumbnail'); }
+                              finally { setUploadingThumbnail(false); }
+                            }}
+                          >
+                            <input
+                              id="instructor-thumbnail-upload"
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+                                setUploadingThumbnail(true);
+                                try {
+                                  const res = await courseApi.uploadThumbnail(file);
+                                  setCourse(prev => ({ ...prev, thumbnailUrl: res.data.url }));
+                                  toast.success('Thumbnail uploaded — click Apply Changes to save');
+                                } catch { toast.error('Failed to upload thumbnail'); }
+                                finally { setUploadingThumbnail(false); e.target.value = ''; }
+                              }}
+                            />
+                            {uploadingThumbnail ? (
+                              <div className="flex flex-col items-center gap-2 py-4">
+                                <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+                                <p className="text-[13px] text-[#0071e3] font-medium">Uploading...</p>
+                              </div>
+                            ) : (
+                              <>
+                                <Upload size={28} className="mx-auto text-[#86868b] mb-2" />
+                                <p className="text-[14px] font-medium text-[#1d1d1f]">Drop image here or click to upload</p>
+                                <p className="text-[12px] text-[#86868b] mt-1">PNG, JPG, WebP up to 10MB</p>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="relative group overflow-hidden rounded-xl border border-[#f5f5f7] bg-white aspect-video flex items-center justify-center">
+                            <img 
+                              src={course.thumbnailUrl} 
+                              alt="Course Preview" 
+                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                              onError={(e) => e.target.src = 'https://placehold.co/600x400?text=Invalid+Image'}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); document.getElementById('instructor-thumbnail-replace').click(); }}
+                                  className="px-3 py-1.5 bg-white/90 backdrop-blur rounded-lg text-[12px] font-semibold text-[#1d1d1f] hover:bg-white transition-all"
+                                >
+                                  Replace
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setCourse(prev => ({ ...prev, thumbnailUrl: '' })); }}
+                                  className="px-3 py-1.5 bg-[#ff3b30]/90 backdrop-blur rounded-lg text-[12px] font-semibold text-white hover:bg-[#ff3b30] transition-all"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              id="instructor-thumbnail-replace"
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+                                setUploadingThumbnail(true);
+                                try {
+                                  const res = await courseApi.uploadThumbnail(file);
+                                  setCourse(prev => ({ ...prev, thumbnailUrl: res.data.url }));
+                                  toast.success('Thumbnail replaced — click Apply Changes to save');
+                                } catch { toast.error('Failed to upload thumbnail'); }
+                                finally { setUploadingThumbnail(false); e.target.value = ''; }
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
-                      {course.thumbnailUrl && (
-                        <div className="relative group overflow-hidden rounded-xl border border-[#f5f5f7] bg-white aspect-video flex items-center justify-center">
-                          <img 
-                            src={course.thumbnailUrl} 
-                            alt="Course Preview" 
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                            onError={(e) => e.target.src = 'https://placehold.co/600x400?text=Invalid+Image+URL'}
-                          />
-                        </div>
-                      )}
                     </div>
                     <div className="space-y-6">
                       <div>
@@ -1379,20 +1468,84 @@ export default function CourseEditor() {
                 </div>
               )}
 
-              {/* QUIZ + ASSIGNMENT */}
+              {/* DOCUMENT – PDF upload */}
               {newLessonContentType === 'DOCUMENT' && (
                 <div>
                   <label className="control-label block mb-2 text-[#6e6e73]">
-                    Document URL
+                    PDF Document <span className="text-[#86868b] font-normal">(max 25 MB)</span>
                   </label>
-
-                  <input
-                    type="url"
-                    value={lessonDocumentUrl}
-                    onChange={(e) => setLessonDocumentUrl(e.target.value)}
-                    placeholder="https://example.com/document.pdf"
-                    className="w-full"
-                  />
+                  {lessonDocumentUrl ? (
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-[#f5f5f7] border border-[#d2d2d7]">
+                      <FileCode size={20} className="text-[#0071e3] shrink-0" />
+                      <span className="text-[13px] text-[#1d1d1f] truncate flex-1">
+                        {lessonDocumentFileName || 'document.pdf'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setLessonDocumentUrl(''); setLessonDocumentFileName(''); }}
+                        className="p-1 hover:bg-[#d2d2d7] rounded-lg transition-colors text-[#ff3b30]"
+                        title="Remove file"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className="relative border-2 border-dashed border-[#d2d2d7] rounded-xl p-6 text-center hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-all cursor-pointer"
+                      onClick={() => !uploadingDocument && document.getElementById('instructor-lesson-doc-upload').click()}
+                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5');
+                        const file = e.dataTransfer.files[0];
+                        if (!file) return;
+                        if (file.type !== 'application/pdf') { toast.error('Chỉ chấp nhận file PDF'); return; }
+                        if (file.size > 25 * 1024 * 1024) { toast.error('File không được vượt quá 25 MB'); return; }
+                        setUploadingDocument(true);
+                        try {
+                          const res = await lessonApi.uploadDocument(file);
+                          setLessonDocumentUrl(res.data.s3Key);
+                          setLessonDocumentFileName(file.name);
+                          toast.success('Tải tài liệu thành công');
+                        } catch { toast.error('Tải tài liệu thất bại'); }
+                        finally { setUploadingDocument(false); }
+                      }}
+                    >
+                      <input
+                        id="instructor-lesson-doc-upload"
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          if (file.type !== 'application/pdf') { toast.error('Chỉ chấp nhận file PDF'); e.target.value = ''; return; }
+                          if (file.size > 25 * 1024 * 1024) { toast.error('File không được vượt quá 25 MB'); e.target.value = ''; return; }
+                          setUploadingDocument(true);
+                          try {
+                            const res = await lessonApi.uploadDocument(file);
+                            setLessonDocumentUrl(res.data.s3Key);
+                            setLessonDocumentFileName(file.name);
+                            toast.success('Tải tài liệu thành công');
+                          } catch { toast.error('Tải tài liệu thất bại'); }
+                          finally { setUploadingDocument(false); e.target.value = ''; }
+                        }}
+                      />
+                      {uploadingDocument ? (
+                        <div className="flex flex-col items-center gap-2 py-2">
+                          <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+                          <p className="text-[13px] text-[#0071e3] font-medium">Đang tải lên...</p>
+                        </div>
+                      ) : (
+                        <>
+                          <Upload size={24} className="mx-auto text-[#86868b] mb-2" />
+                          <p className="text-[14px] font-medium text-[#1d1d1f]">Kéo thả PDF vào đây hoặc click để chọn</p>
+                          <p className="text-[12px] text-[#86868b] mt-1">Chỉ PDF • Tối đa 25 MB</p>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {newLessonContentType === 'LINK' && (

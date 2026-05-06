@@ -6,7 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import Modal from '../../components/ui/Modal';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
-import { ArrowLeft, FileText, Link as LinkIcon, Star, MessageSquare, Save } from 'lucide-react';
+import { ArrowLeft, FileText, Link as LinkIcon, Star, MessageSquare, Save, Download, Loader2 } from 'lucide-react';
 
 export default function Submissions() {
   const { courseId, assignmentId } = useParams();
@@ -18,6 +18,7 @@ export default function Submissions() {
   const [showGradeModal, setShowGradeModal] = useState(false);
   const [gradeTarget, setGradeTarget] = useState(null);
   const [gradeForm, setGradeForm] = useState({ manualScore: '', feedback: '' });
+  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => { loadData(); }, [assignmentId]);
 
@@ -53,6 +54,18 @@ export default function Submissions() {
       loadData();
     } catch {
       toast.error('Failed to grade');
+    }
+  };
+
+  const handleDownloadFile = async (submissionId) => {
+    setDownloadingId(submissionId);
+    try {
+      const res = await submissionApi.getFileUrl(submissionId);
+      window.open(res.data.url, '_blank', 'noopener,noreferrer');
+    } catch {
+      toast.error('Không thể tải file');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -94,7 +107,18 @@ export default function Submissions() {
                   <td className="text-xs">{s.submittedAt ? new Date(s.submittedAt).toLocaleString() : '-'}</td>
                   <td>
                     <div className="flex items-center gap-2">
-                      {s.fileUrl && <a href={s.fileUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300"><FileText size={14} /></a>}
+                      {s.fileUrl && (
+                        <button
+                          onClick={() => handleDownloadFile(s.id)}
+                          disabled={downloadingId === s.id}
+                          className="p-1 rounded text-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                          title="Tải file"
+                        >
+                          {downloadingId === s.id
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <Download size={14} />}
+                        </button>
+                      )}
                       {s.linkUrl && <a href={s.linkUrl} target="_blank" rel="noreferrer" className="text-cyan-400 hover:text-cyan-300"><LinkIcon size={14} /></a>}
                       {!s.fileUrl && !s.linkUrl && <span className="text-neutral-300">—</span>}
                     </div>
