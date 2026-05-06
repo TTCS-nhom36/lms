@@ -42,6 +42,8 @@ export default function AssignmentView() {
   const [quizStarted, setQuizStarted] = useState(false);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [showRetryConfirm, setShowRetryConfirm] = useState(false);
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [latestAttemptResult, setLatestAttemptResult] = useState(null);
 
   // Countdown timer
   const [timeLeft, setTimeLeft] = useState(null); // seconds
@@ -61,26 +63,27 @@ export default function AssignmentView() {
       const assignmentData = aRes.data;
       setAssignment(assignmentData);
 
+      // Luôn cố gắng tải submission của user (áp dụng cho cả Quiz và các loại khác)
+      try {
+        const sRes = await assignmentApi.getMySubmission(id);
+        setMySubmission(sRes.data);
+        // Fetch download URL if a file was submitted
+        if (sRes.data?.id && sRes.data?.fileUrl) {
+          try {
+            const urlRes = await submissionApi.getFileUrl(sRes.data.id);
+            setSubmissionFileUrl(urlRes.data.url);
+          } catch { /* file might not exist yet */ }
+        }
+      } catch {
+        setMySubmission(null);
+      }
+
       if (assignmentData.type === 'QUIZ') {
         try {
           const attemptRes = await quizAttemptApi.getMyAttempt(id);
           setQuizResult(attemptRes.data);
         } catch {
           setQuizResult(null);
-        }
-      } else {
-        try {
-          const sRes = await assignmentApi.getMySubmission(id);
-          setMySubmission(sRes.data);
-          // Fetch download URL if a file was submitted
-          if (sRes.data?.id && sRes.data?.fileUrl) {
-            try {
-              const urlRes = await submissionApi.getFileUrl(sRes.data.id);
-              setSubmissionFileUrl(urlRes.data.url);
-            } catch { /* file might not exist yet */ }
-          }
-        } catch {
-          setMySubmission(null);
         }
       }
     } catch {
@@ -175,8 +178,11 @@ export default function AssignmentView() {
 
       if (!isAutoSubmit) toast.success('Quiz submitted successfully! 🎉');
       setQuizResult(res.data);
+      setLatestAttemptResult(res.data);
+      setShowResultModal(true);
       setQuizStarted(false);
       setTimeLeft(null);
+      loadData(); // Tải lại data để lấy best score từ bảng submission
     } catch (error) {
       console.error('Submit quiz error:', error);
       toast.error('Failed to submit quiz');
@@ -246,8 +252,9 @@ export default function AssignmentView() {
   const renderQuizMode = () => {
     // Show result
     if (quizResult && !quizStarted) {
-      const pct = quizResult.scorePercentage ?? 0;
-      const passed = pct >= 60;
+      // Lấy điểm cao nhất từ bảng submission (ưu tiên finalScore, sau đó autoScore)
+      const bestScore = mySubmission ? Number(mySubmission.finalScore ?? mySubmission.autoScore ?? 0) : (quizResult.scorePercentage ?? 0);
+      const passed = bestScore >= 60;
       return (
         <div className="space-y-4">
           <div className={`glass-card p-6 border-2 ${passed ? 'border-emerald-500/20' : 'border-rose-400/20'}`}>
@@ -255,20 +262,14 @@ export default function AssignmentView() {
               <CheckCircle size={18} className={passed ? 'text-emerald-500' : 'text-rose-400'} />
               Quiz Result
             </h3>
-            <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl mb-4">
+            <div className="grid grid-cols-1 gap-4 bg-neutral-50 p-4 rounded-xl mb-4">
               <div>
-                <span className="text-xs text-neutral-400 block mb-1">Score</span>
+                <span className="text-xs text-neutral-400 block mb-1">Best Score</span>
                 <span className={`text-3xl font-bold ${passed ? 'text-emerald-500' : 'text-rose-400'}`}>
-                  {pct.toFixed(1)}%
+                  {bestScore.toFixed(1)}%
                 </span>
               </div>
-              <div>
-                <span className="text-xs text-neutral-400 block mb-1">Correct Answers</span>
-                <span className="text-3xl font-bold text-neutral-900">
-                  {quizResult.correctAnswers} / {quizResult.totalQuestions}
-                </span>
-              </div>
-              <div className="col-span-2 text-sm text-neutral-500">
+              <div className="text-sm text-neutral-500 mt-2">
                 Submitted at: {new Date(quizResult.submittedAt).toLocaleString()}
               </div>
             </div>
@@ -606,6 +607,35 @@ export default function AssignmentView() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Result Modal for just completed quiz */}
+      <Modal isOpen={showResultModal} onClose={() => setShowResultModal(false)} title="Quiz Attempt Result" size="sm">
+        {latestAttemptResult && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center justify-center py-6 bg-neutral-50 rounded-xl">
+              <span className="text-sm text-neutral-500 mb-2">Your Score</span>
+              <span className={`text-4xl font-bold ${latestAttemptResult.scorePercentage >= 60 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                {latestAttemptResult.scorePercentage.toFixed(1)}%
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white border border-neutral-200 p-4 rounded-xl text-center">
+                <span className="text-xs text-neutral-400 block mb-1">Correct</span>
+                <span className="text-xl font-bold text-emerald-500">{latestAttemptResult.correctAnswers}</span>
+              </div>
+              <div className="bg-white border border-neutral-200 p-4 rounded-xl text-center">
+                <span className="text-xs text-neutral-400 block mb-1">Total Questions</span>
+                <span className="text-xl font-bold text-neutral-900">{latestAttemptResult.totalQuestions}</span>
+              </div>
+            </div>
+            <div className="pt-4 flex">
+              <button onClick={() => setShowResultModal(false)} className="btn-primary flex-1">
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

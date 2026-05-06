@@ -12,7 +12,9 @@ import com.ttcs.backend.mapper.SubmissionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -51,14 +53,58 @@ public class SubmissionService {
     }
 
     public SubmissionResponse create(SubmitRequest request) {
+        Assignment assignment = findAssignmentById(request.getAssignmentId());
+        User user = findUserById(request.getUserId());
+
+        // Tính điểm cho submission mới
+        BigDecimal newScore = request.getAutoScore();
+
+        // Lấy tất cả submission cũ của cùng (userId, assignmentId)
+        List<Submission> existing = submissionRepository
+                .findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId());
+
+        if (!existing.isEmpty()) {
+            // Tìm bản ghi có điểm cao nhất trong danh sách cũ
+            Optional<Submission> bestOpt = existing.stream()
+                    .max(Comparator.comparing(s -> effectiveScore(s), Comparator.nullsFirst(Comparator.naturalOrder())));
+
+            Submission best = bestOpt.get();
+            BigDecimal bestScore = effectiveScore(best);
+
+            // Xoá tất cả bản ghi cũ trừ bản ghi tốt nhất
+            existing.stream()
+                    .filter(s -> !s.getId().equals(best.getId()))
+                    .forEach(submissionRepository::delete);
+            submissionRepository.flush();
+
+            // Nếu điểm mới >= điểm tốt nhất cũ → cập nhật bản ghi tốt nhất
+            BigDecimal newEffective = newScore != null ? newScore : BigDecimal.ZERO;
+            if (bestScore == null || newEffective.compareTo(bestScore) >= 0) {
+                best.setAutoScore(newScore);
+                best.setFinalScore(newScore);
+                best.setSubmittedAt(LocalDateTime.now());
+                return submissionMapper.toResponse(submissionRepository.save(best));
+            }
+
+            // Điểm mới thấp hơn → giữ nguyên bản ghi tốt nhất, không lưu bản mới
+            return submissionMapper.toResponse(best);
+        }
+
+        // Chưa có bản ghi nào → tạo mới bình thường
         Submission submission = submissionMapper.toEntity(request);
-        submission.setAssignment(findAssignmentById(request.getAssignmentId()));
-        submission.setUser(findUserById(request.getUserId()));
-        if (request.getAutoScore() != null) {
-            submission.setAutoScore(request.getAutoScore());
-            submission.setFinalScore(request.getAutoScore());
+        submission.setAssignment(assignment);
+        submission.setUser(user);
+        if (newScore != null) {
+            submission.setAutoScore(newScore);
+            submission.setFinalScore(newScore);
         }
         return submissionMapper.toResponse(submissionRepository.save(submission));
+    }
+
+    /** Trả về điểm hiệu quả: ưu tiên finalScore, nếu null thì lấy autoScore */
+    private BigDecimal effectiveScore(Submission s) {
+        if (s.getFinalScore() != null) return s.getFinalScore();
+        return s.getAutoScore();
     }
 
     public SubmissionResponse update(Long id, SubmitRequest request) {
