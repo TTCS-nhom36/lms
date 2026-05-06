@@ -1,6 +1,7 @@
 package com.ttcs.backend.controller;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.ttcs.backend.dto.request.CreateCourseRequest;
 import com.ttcs.backend.dto.response.CourseDetailResponse;
@@ -27,6 +29,7 @@ import com.ttcs.backend.enums.CourseStatus;
 import com.ttcs.backend.mapper.EnrollmentMapper;
 import com.ttcs.backend.service.CourseService;
 import com.ttcs.backend.service.CurrentUserService;
+import com.ttcs.backend.service.S3Service;
 
 @RestController
 @RequestMapping("/api/lms/courses")
@@ -35,11 +38,14 @@ public class CourseController {
     private final CourseService courseService;
     private final EnrollmentMapper enrollmentMapper;
     private final CurrentUserService currentUserService;
+    private final S3Service s3Service;
 
-    public CourseController(CourseService courseService, EnrollmentMapper enrollmentMapper, CurrentUserService currentUserService) {
+    public CourseController(CourseService courseService, EnrollmentMapper enrollmentMapper,
+            CurrentUserService currentUserService, S3Service s3Service) {
         this.courseService = courseService;
         this.enrollmentMapper = enrollmentMapper;
         this.currentUserService = currentUserService;
+        this.s3Service = s3Service;
     }
 
     @GetMapping
@@ -47,8 +53,7 @@ public class CourseController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) CourseStatus status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
-    ) {
+            @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(courseService.findPage(search, status, page, size));
     }
 
@@ -105,7 +110,25 @@ public class CourseController {
         byte[] fileBytes = courseService.exportGradebook(id);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=gradebook-course-" + id + ".xlsx")
-                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .contentType(
+                        MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(fileBytes);
+    }
+
+    @PostMapping(value = "/upload-thumbnail", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, String>> uploadThumbnail(@RequestParam("file") MultipartFile file) {
+        String key = s3Service.uploadFile(file, "thumbnails");
+        String url = s3Service.getFileUrl(key);
+        return ResponseEntity.ok(Map.of("url", url, "key", key));
+    }
+
+    @GetMapping("/s3-image")
+    public ResponseEntity<byte[]> getS3Image(@RequestParam("key") String key) {
+        byte[] imageBytes = s3Service.getFileBytes(key);
+        String contentType = s3Service.getFileContentType(key);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType != null ? contentType : "image/jpeg"))
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                .body(imageBytes);
     }
 }

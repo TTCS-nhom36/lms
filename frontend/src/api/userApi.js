@@ -10,4 +10,11 @@ export const userApi = {
   getMe: () => api.get('/users/me'),
   updateMe: (data) => api.put('/users/me', data),
   changePassword: (data) => api.patch('/users/me/password', data),
+  uploadAvatar: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/users/me/avatar', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };

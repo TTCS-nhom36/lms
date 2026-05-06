@@ -27,7 +27,8 @@ export default function CourseEditor() {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('settings');
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+  const [activeTab, setActiveTab] = useState('curriculum');
   const [course, setCourse] = useState({
     title: '',
     description: '',
@@ -52,6 +53,8 @@ export default function CourseEditor() {
   const [lessonQuestions, setLessonQuestions] = useState([]);
 
   const [lessonDocumentUrl, setLessonDocumentUrl] = useState('');
+  const [lessonDocumentFileName, setLessonDocumentFileName] = useState('');
+  const [uploadingDocument, setUploadingDocument] = useState(false);
   const [lessonLinkUrl, setLessonLinkUrl] = useState('');
   const [lessonNotebookUrl, setLessonNotebookUrl] = useState('');
   //Editting chapter
@@ -67,6 +70,7 @@ export default function CourseEditor() {
     setLessonTextContent('');
     setLessoncontentUrl('');
     setLessonDocumentUrl('');
+    setLessonDocumentFileName('');
     setLessonLinkUrl('');
     setLessonNotebookUrl('');
     setSelectedChapterId(null);
@@ -488,8 +492,13 @@ export default function CourseEditor() {
       setLessoncontentUrl(lesson.contentUrl || "");
     }
 
-    if (lesson.contentType === "DOCUMENT") {
-      setLessonDocumentUrl(lesson.contentUrl || "");
+    if (lesson.contentType === 'DOCUMENT') {
+      setLessonDocumentUrl(lesson.contentUrl || '');
+      // Try to extract filename from s3 key (format: lesson-documents/uuid_filename.pdf)
+      const key = lesson.contentUrl || '';
+      const parts = key.split('_');
+      const name = parts.length > 1 ? parts.slice(1).join('_') : key.split('/').pop();
+      setLessonDocumentFileName(name || '');
     }
 
     if (lesson.contentType === "LINK") {
@@ -575,11 +584,11 @@ export default function CourseEditor() {
     if (!assignmentForm.title.trim()) { toast.error('Title is required'); return; }
     setSaving(true);
     try {
-      const payload = { 
-        ...assignmentForm, 
+      const payload = {
+        ...assignmentForm,
         courseId: Number(id), // Include courseId (id is the courseId in CourseEditor)
-        createdById: String(user.id), 
-        dueDate: assignmentForm.dueDate ? assignmentForm.dueDate + ':00' : null 
+        createdById: String(user.id),
+        dueDate: assignmentForm.dueDate ? assignmentForm.dueDate + ':00' : null
       };
       if (editingAssignment) {
         await assignmentApi.update(editingAssignment.id, payload);
@@ -630,10 +639,10 @@ export default function CourseEditor() {
 
     setQuestionSaving(true);
     try {
-      const res = await assignmentApi.addQuestion(questionAssignment.id, { 
-        content: questionForm.content, 
-        type: questionForm.type, 
-        orderIndex: Number(questionForm.orderIndex), 
+      const res = await assignmentApi.addQuestion(questionAssignment.id, {
+        content: questionForm.content,
+        type: questionForm.type,
+        orderIndex: Number(questionForm.orderIndex),
         score: Number(questionForm.score),
         options: questionForm.options.map((opt, idx) => ({ content: opt.content, isCorrect: opt.isCorrect, orderIndex: idx + 1 }))
       });
@@ -795,10 +804,10 @@ export default function CourseEditor() {
   if (loading) return <LoadingSpinner text="Loading course..." />;
 
   const tabs = [
-    { id: 'settings', label: 'Primary Settings' },
     { id: 'curriculum', label: 'Curriculum Model' },
     { id: 'assignments', label: 'Assignments' },
     { id: 'students', label: 'Students' },
+    { id: 'settings', label: 'Primary Settings' },
   ];
 
   const contentTypeIcon = (type) => {
@@ -823,9 +832,9 @@ export default function CourseEditor() {
         {activeTab === 'settings' && (
           <div className="flex gap-3">
             {!isNew && (
-              <button 
-                onClick={() => setShowDeleteCourseConfirm(true)} 
-                disabled={saving} 
+              <button
+                onClick={() => setShowDeleteCourseConfirm(true)}
+                disabled={saving}
                 className="btn-secondary !text-[#ff3b30] hover:!bg-[#ff3b30]/10 border-[#ff3b30]/30 disabled:opacity-50"
               >
                 Delete Course
@@ -872,22 +881,22 @@ export default function CourseEditor() {
                 <div className="space-y-6">
                   <div>
                     <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Course Title *</label>
-                    <input 
-                      type="text" 
-                      value={course.title} 
-                      onChange={(e) => setCourse({ ...course, title: e.target.value })} 
-                      placeholder="e.g., Mastering Modern UI Design" 
-                      className="!text-[16px] !p-4 !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all" 
+                    <input
+                      type="text"
+                      value={course.title}
+                      onChange={(e) => setCourse({ ...course, title: e.target.value })}
+                      placeholder="e.g., Mastering Modern UI Design"
+                      className="!text-[16px] !p-4 !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all"
                     />
                   </div>
-                  
+
                   <div>
                     <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Editorial Description</label>
-                    <textarea 
-                      rows={6} 
-                      value={course.description} 
-                      onChange={(e) => setCourse({ ...course, description: e.target.value })} 
-                      placeholder="Describe the learning outcomes and target audience..." 
+                    <textarea
+                      rows={6}
+                      value={course.description}
+                      onChange={(e) => setCourse({ ...course, description: e.target.value })}
+                      placeholder="Describe the learning outcomes and target audience..."
                       className="!text-[15px] !p-4 !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all"
                     />
                   </div>
@@ -895,32 +904,113 @@ export default function CourseEditor() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div>
-                        <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Thumbnail URL</label>
-                        <input 
-                          type="url" 
-                          value={course.thumbnailUrl} 
-                          onChange={(e) => setCourse({ ...course, thumbnailUrl: e.target.value })} 
-                          placeholder="https://images.unsplash.com/..." 
-                          className="!bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all" 
-                        />
+                        <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Course Thumbnail</label>
+                        {!course.thumbnailUrl ? (
+                          <div
+                            className="relative border-2 border-dashed border-[#d2d2d7] rounded-xl p-6 text-center hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-all cursor-pointer"
+                            onClick={() => document.getElementById('admin-thumbnail-upload').click()}
+                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5');
+                              const file = e.dataTransfer.files[0];
+                              if (!file) return;
+                              if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+                              setUploadingThumbnail(true);
+                              try {
+                                const res = await courseApi.uploadThumbnail(file);
+                                setCourse(prev => ({ ...prev, thumbnailUrl: res.data.url }));
+                                toast.success('Thumbnail uploaded — click Apply Changes to save');
+                              } catch { toast.error('Failed to upload thumbnail'); }
+                              finally { setUploadingThumbnail(false); }
+                            }}
+                          >
+                            <input
+                              id="admin-thumbnail-upload"
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+                                setUploadingThumbnail(true);
+                                try {
+                                  const res = await courseApi.uploadThumbnail(file);
+                                  setCourse(prev => ({ ...prev, thumbnailUrl: res.data.url }));
+                                  toast.success('Thumbnail uploaded — click Apply Changes to save');
+                                } catch { toast.error('Failed to upload thumbnail'); }
+                                finally { setUploadingThumbnail(false); e.target.value = ''; }
+                              }}
+                            />
+                            {uploadingThumbnail ? (
+                              <div className="flex flex-col items-center gap-2 py-4">
+                                <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+                                <p className="text-[13px] text-[#0071e3] font-medium">Uploading...</p>
+                              </div>
+                            ) : (
+                              <>
+                                <Upload size={28} className="mx-auto text-[#86868b] mb-2" />
+                                <p className="text-[14px] font-medium text-[#1d1d1f]">Drop image here or click to upload</p>
+                                <p className="text-[12px] text-[#86868b] mt-1">PNG, JPG, WebP up to 10MB</p>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="relative group overflow-hidden rounded-xl border border-[#f5f5f7] bg-white aspect-video flex items-center justify-center">
+                            <img
+                              src={course.thumbnailUrl}
+                              alt="Course Preview"
+                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                              onError={(e) => e.target.src = 'https://placehold.co/600x400?text=Invalid+Image'}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); document.getElementById('admin-thumbnail-replace').click(); }}
+                                  className="px-3 py-1.5 bg-white/90 backdrop-blur rounded-lg text-[12px] font-semibold text-[#1d1d1f] hover:bg-white transition-all"
+                                >
+                                  Replace
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setCourse(prev => ({ ...prev, thumbnailUrl: '' })); }}
+                                  className="px-3 py-1.5 bg-[#ff3b30]/90 backdrop-blur rounded-lg text-[12px] font-semibold text-white hover:bg-[#ff3b30] transition-all"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              id="admin-thumbnail-replace"
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+                                setUploadingThumbnail(true);
+                                try {
+                                  const res = await courseApi.uploadThumbnail(file);
+                                  setCourse(prev => ({ ...prev, thumbnailUrl: res.data.url }));
+                                  toast.success('Thumbnail replaced — click Apply Changes to save');
+                                } catch { toast.error('Failed to upload thumbnail'); }
+                                finally { setUploadingThumbnail(false); e.target.value = ''; }
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
-                      {course.thumbnailUrl && (
-                        <div className="relative group overflow-hidden rounded-xl border border-[#f5f5f7] bg-white aspect-video flex items-center justify-center">
-                          <img 
-                            src={course.thumbnailUrl} 
-                            alt="Course Preview" 
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                            onError={(e) => e.target.src = 'https://placehold.co/600x400?text=Invalid+Image+URL'}
-                          />
-                        </div>
-                      )}
                     </div>
                     <div className="space-y-6">
                       <div>
                         <label className="text-[13px] font-semibold text-[#1d1d1f] block mb-2 ml-1">Initial Status</label>
-                        <select 
-                          value={course.status} 
-                          onChange={(e) => setCourse({ ...course, status: e.target.value })} 
+                        <select
+                          value={course.status}
+                          onChange={(e) => setCourse({ ...course, status: e.target.value })}
                           className="w-full !bg-[#f5f5f7] border-none focus:!bg-white focus:ring-2 focus:ring-[#0071e3]/20 transition-all"
                         >
                           <option value="DRAFT">Draft</option>
@@ -950,21 +1040,7 @@ export default function CourseEditor() {
               </div>
             </div>
 
-            <div className="space-y-8">
-              <div className="apple-card p-6 border-none shadow-none text-center flex flex-col items-center">
-                <CheckCircle size={32} className="text-[#0071e3] mb-4" />
-                <h4 className="body-emphasis text-[#1d1d1f] mb-2">Ready to Deploy</h4>
-                <p className="micro-ui text-[#6e6e73] mb-4">Once correctly configured, you can shift state to published.</p>
-                <button
-                  onClick={handlePublish}
-                  disabled={saving || isNew || course.status === 'PUBLISHED'}
-                  className="btn-primary w-full shadow-md shadow-[#0071e3]/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={isNew ? 'Save course first' : course.status === 'PUBLISHED' ? 'Already published' : ''}
-                >
-                  {saving ? 'Publishing...' : course.status === 'PUBLISHED' ? 'Already Published' : 'Publish Course'}
-                </button>
-              </div>
-            </div>
+
           </div>
         )}
 
@@ -1045,7 +1121,7 @@ export default function CourseEditor() {
                         >
                           <Plus size={18} />
                         </button>
-                         <button
+                        <button
                           onClick={() => openEditChapterModal(chapter)}
                           className="p-2 hover:bg-[#f5f5f7] rounded-lg transition-colors text-[#0071e3]"
                           title="Edit chapter"
@@ -1380,20 +1456,86 @@ export default function CourseEditor() {
                 </div>
               )}
 
-              {/* QUIZ + ASSIGNMENT */}
+              {/* DOCUMENT – PDF upload */}
               {newLessonContentType === 'DOCUMENT' && (
                 <div>
                   <label className="control-label block mb-2 text-[#6e6e73]">
-                    Document URL
+                    PDF Document <span className="text-[#86868b] font-normal">(max 25 MB)</span>
                   </label>
-
-                  <input
-                    type="url"
-                    value={lessonDocumentUrl}
-                    onChange={(e) => setLessonDocumentUrl(e.target.value)}
-                    placeholder="https://example.com/document.pdf"
-                    className="w-full"
-                  />
+                  {lessonDocumentUrl ? (
+                    /* Already uploaded */
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-[#f5f5f7] border border-[#d2d2d7]">
+                      <FileCode size={20} className="text-[#0071e3] shrink-0" />
+                      <span className="text-[13px] text-[#1d1d1f] truncate flex-1">
+                        {lessonDocumentFileName || 'document.pdf'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setLessonDocumentUrl(''); setLessonDocumentFileName(''); }}
+                        className="p-1 hover:bg-[#d2d2d7] rounded-lg transition-colors text-[#ff3b30]"
+                        title="Remove file"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Upload area */
+                    <div
+                      className="relative border-2 border-dashed border-[#d2d2d7] rounded-xl p-6 text-center hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-all cursor-pointer"
+                      onClick={() => !uploadingDocument && document.getElementById('admin-lesson-doc-upload').click()}
+                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5'); }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove('border-[#0071e3]', 'bg-[#0071e3]/5');
+                        const file = e.dataTransfer.files[0];
+                        if (!file) return;
+                        if (file.type !== 'application/pdf') { toast.error('Chỉ chấp nhận file PDF'); return; }
+                        if (file.size > 25 * 1024 * 1024) { toast.error('File không được vượt quá 25 MB'); return; }
+                        setUploadingDocument(true);
+                        try {
+                          const res = await lessonApi.uploadDocument(file);
+                          setLessonDocumentUrl(res.data.s3Key);
+                          setLessonDocumentFileName(file.name);
+                          toast.success('Tải tài liệu thành công');
+                        } catch { toast.error('Tải tài liệu thất bại'); }
+                        finally { setUploadingDocument(false); }
+                      }}
+                    >
+                      <input
+                        id="admin-lesson-doc-upload"
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          if (file.type !== 'application/pdf') { toast.error('Chỉ chấp nhận file PDF'); e.target.value = ''; return; }
+                          if (file.size > 25 * 1024 * 1024) { toast.error('File không được vượt quá 25 MB'); e.target.value = ''; return; }
+                          setUploadingDocument(true);
+                          try {
+                            const res = await lessonApi.uploadDocument(file);
+                            setLessonDocumentUrl(res.data.s3Key);
+                            setLessonDocumentFileName(file.name);
+                            toast.success('Tải tài liệu thành công');
+                          } catch { toast.error('Tải tài liệu thất bại'); }
+                          finally { setUploadingDocument(false); e.target.value = ''; }
+                        }}
+                      />
+                      {uploadingDocument ? (
+                        <div className="flex flex-col items-center gap-2 py-2">
+                          <div className="w-8 h-8 border-2 border-[#0071e3] border-t-transparent rounded-full animate-spin" />
+                          <p className="text-[13px] text-[#0071e3] font-medium">Đang tải lên...</p>
+                        </div>
+                      ) : (
+                        <>
+                          <Upload size={24} className="mx-auto text-[#86868b] mb-2" />
+                          <p className="text-[14px] font-medium text-[#1d1d1f]">Kéo thả PDF vào đây hoặc click để chọn</p>
+                          <p className="text-[12px] text-[#86868b] mt-1">Chỉ PDF • Tối đa 25 MB</p>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {newLessonContentType === 'LINK' && (
@@ -1527,8 +1669,8 @@ export default function CourseEditor() {
                       } else if (questionForm.type === 'TRUE_FALSE') {
                         newOptions = [{ content: '', isCorrect: false }, { content: '', isCorrect: false }];
                       } else if (newType === 'SINGLE_CHOICE') {
-                         const hasCorrect = newOptions.findIndex(o => o.isCorrect);
-                         newOptions = newOptions.map((o, i) => ({...o, isCorrect: i === hasCorrect}));
+                        const hasCorrect = newOptions.findIndex(o => o.isCorrect);
+                        newOptions = newOptions.map((o, i) => ({ ...o, isCorrect: i === hasCorrect }));
                       }
                       setQuestionForm({ ...questionForm, type: newType, options: newOptions });
                     }}>
@@ -1543,36 +1685,36 @@ export default function CourseEditor() {
                   <div className="flex justify-between items-center mb-2">
                     <label className="control-label text-[#6e6e73]">Answers / Options *</label>
                     {questionForm.type !== 'TRUE_FALSE' && (
-                      <button onClick={() => setQuestionForm({...questionForm, options: [...(questionForm.options || []), { content: '', isCorrect: false }]})} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
-                        <Plus size={12} className="inline mr-1"/>Add Option
+                      <button onClick={() => setQuestionForm({ ...questionForm, options: [...(questionForm.options || []), { content: '', isCorrect: false }] })} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
+                        <Plus size={12} className="inline mr-1" />Add Option
                       </button>
                     )}
                   </div>
                   <div className="space-y-2">
                     {(questionForm.options || []).map((opt, index) => (
                       <div key={index} className="flex items-center gap-2">
-                        <input 
-                          type={questionForm.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'} 
+                        <input
+                          type={questionForm.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'}
                           name="correctOption"
-                          checked={opt.isCorrect} 
+                          checked={opt.isCorrect}
                           onChange={() => {
                             const newOptions = [...questionForm.options];
                             if (questionForm.type === 'MULTIPLE_CHOICE') {
-                              newOptions[index] = {...newOptions[index], isCorrect: !newOptions[index].isCorrect};
+                              newOptions[index] = { ...newOptions[index], isCorrect: !newOptions[index].isCorrect };
                             } else {
-                              newOptions.forEach((o, i) => newOptions[i] = {...o, isCorrect: i === index});
+                              newOptions.forEach((o, i) => newOptions[i] = { ...o, isCorrect: i === index });
                             }
                             setQuestionForm({ ...questionForm, options: newOptions });
-                          }} 
+                          }}
                           className="w-4 h-4 accent-[#0071e3]"
                         />
-                        <input 
-                          type="text" 
-                          value={opt.content} 
+                        <input
+                          type="text"
+                          value={opt.content}
                           disabled={questionForm.type === 'TRUE_FALSE'}
                           onChange={(e) => {
                             const newOptions = [...questionForm.options];
-                            newOptions[index] = {...newOptions[index], content: e.target.value};
+                            newOptions[index] = { ...newOptions[index], content: e.target.value };
                             setQuestionForm({ ...questionForm, options: newOptions });
                           }}
                           className={`flex-1 text-sm py-1.5 ${opt.isCorrect ? 'border-[#0071e3] bg-[#0071e3]/5' : ''}`}
@@ -1614,7 +1756,7 @@ export default function CourseEditor() {
                             <span>Score: {q.score ?? '—'}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button 
+                            <button
                               onClick={() => {
                                 setEditingQuestion(q);
                                 setQuestionForm({
@@ -1624,7 +1766,7 @@ export default function CourseEditor() {
                                   score: q.score || 1,
                                   options: q.options?.map(o => ({ content: o.content, isCorrect: o.isCorrect || false })) || [{ content: '', isCorrect: false }, { content: '', isCorrect: false }]
                                 });
-                              }} 
+                              }}
                               className="text-[#0071e3] hover:bg-[#0071e3]/10 p-1 rounded transition-colors" title="Edit Question"
                             >
                               <Edit size={12} />
@@ -1687,23 +1829,23 @@ export default function CourseEditor() {
       </Modal>
 
       {/* Assignment Delete Confirm */}
-      <ConfirmDialog 
-        isOpen={showAssignmentDeleteConfirm} 
-        onClose={() => setShowAssignmentDeleteConfirm(false)} 
-        onConfirm={handleDeleteAssignment} 
-        title="Delete Assignment" 
-        message="This will permanently delete the assignment and all its questions. Are you sure?" 
+      <ConfirmDialog
+        isOpen={showAssignmentDeleteConfirm}
+        onClose={() => setShowAssignmentDeleteConfirm(false)}
+        onConfirm={handleDeleteAssignment}
+        title="Delete Assignment"
+        message="This will permanently delete the assignment and all its questions. Are you sure?"
         confirmText={saving ? "Deleting..." : "Delete"}
         isDanger={true}
       />
 
       {/* Course Delete Confirm */}
-      <ConfirmDialog 
-        isOpen={showDeleteCourseConfirm} 
-        onClose={() => setShowDeleteCourseConfirm(false)} 
-        onConfirm={handleDeleteCourse} 
-        title="Delete Course" 
-        message={`Are you sure you want to permanently delete "${course?.title}"? This action cannot be undone and will delete all chapters, lessons, assignments, and student enrollments associated with this course.`} 
+      <ConfirmDialog
+        isOpen={showDeleteCourseConfirm}
+        onClose={() => setShowDeleteCourseConfirm(false)}
+        onConfirm={handleDeleteCourse}
+        title="Delete Course"
+        message={`Are you sure you want to permanently delete "${course?.title}"? This action cannot be undone and will delete all chapters, lessons, assignments, and student enrollments associated with this course.`}
         confirmText={saving ? "Deleting..." : "Delete"}
         isDanger={true}
       />
