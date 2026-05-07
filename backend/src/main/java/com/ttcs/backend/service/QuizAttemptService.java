@@ -150,12 +150,12 @@ public class QuizAttemptService {
         QuizAttempt attempt = quizAttemptRepository.findById(attemptId)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Attempt not found: " + attemptId));
 
-        List<SelectedAnswerResponse> answerResponses = selectedAnswerRepository.findByQuizAttemptId(attemptId)
-                .stream()
+        List<SelectedAnswer> selectedAnswers = selectedAnswerRepository.findByQuizAttemptId(attemptId);
+
+        List<SelectedAnswerResponse> answerResponses = selectedAnswers.stream()
                 .map(quizAttemptMapper::toSelectedAnswerResponse)
                 .toList();
 
-        List<SelectedAnswer> selectedAnswers = selectedAnswerRepository.findByQuizAttemptId(attemptId);
         ScoreSummary scoreSummary = calculateScoreSummary(attempt.getAssignment().getId(), selectedAnswers);
 
         return SubmitQuizResponse.builder()
@@ -182,9 +182,7 @@ public class QuizAttemptService {
     }
 
         private ScoreSummary calculateScoreSummary(Long assignmentId, List<SelectedAnswer> selectedAnswers) {
-                List<Question> assignmentQuestions = questionRepository.findAll().stream()
-                                .filter(question -> question.getAssignment() != null && assignmentId.equals(question.getAssignment().getId()))
-                                .toList();
+                List<Question> assignmentQuestions = questionRepository.findByAssignmentId(assignmentId);
 
                 Map<Long, Set<Long>> selectedOptionIdsByQuestion = new HashMap<>();
                 for (SelectedAnswer answer : selectedAnswers) {

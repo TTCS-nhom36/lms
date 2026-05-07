@@ -15,4 +15,7 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
 	@Override
 	@EntityGraph(attributePaths = {"assignment", "options"})
 	Optional<Question> findById(Long id);
+
+    @EntityGraph(attributePaths = {"options"})
+    List<Question> findByAssignmentId(Long assignmentId);
 }
