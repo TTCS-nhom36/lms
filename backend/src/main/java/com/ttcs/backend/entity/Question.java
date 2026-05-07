@@ -23,6 +23,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+
 
 @Getter
 @Setter
@@ -39,6 +42,7 @@ public class Question {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignment_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Assignment assignment;
 
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")

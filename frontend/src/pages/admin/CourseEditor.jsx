@@ -1212,7 +1212,7 @@ export default function CourseEditor() {
                       <StatusBadge status={a.type} size="xs" />
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-[#86868b] mb-3">
-                      {a.dueDate && <span className="flex items-center gap-1"><Calendar size={11} /> {new Date(a.dueDate).toLocaleDateString()}</span>}
+                      {a.dueDate && <span className="flex items-center gap-1"><Calendar size={11} /> {new Date(a.dueDate).toLocaleString('vi-VN')}</span>}
                       {a.timeLimitMins > 0 && <span className="flex items-center gap-1"><Clock size={11} /> {a.timeLimitMins} min</span>}
                       <span>Max: {a.maxScore}</span>
                     </div>

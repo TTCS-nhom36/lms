@@ -63,10 +63,14 @@ export default function AssignmentView() {
       const assignmentData = aRes.data;
       setAssignment(assignmentData);
 
+      let submissionData = null;
+      let quizAttemptResult = null;
+
       // Luôn cố gắng tải submission của user (áp dụng cho cả Quiz và các loại khác)
       try {
         const sRes = await assignmentApi.getMySubmission(id);
         setMySubmission(sRes.data);
+        submissionData = sRes.data;
         // Fetch download URL if a file was submitted
         if (sRes.data?.id && sRes.data?.fileUrl) {
           try {
@@ -82,8 +86,18 @@ export default function AssignmentView() {
         try {
           const attemptRes = await quizAttemptApi.getMyAttempt(id);
           setQuizResult(attemptRes.data);
+          quizAttemptResult = attemptRes.data;
         } catch {
           setQuizResult(null);
+        }
+
+        if (quizAttemptResult || submissionData) {
+          try {
+            const qRes = await assignmentApi.getQuestions(id);
+            setQuestions(qRes.data || []);
+          } catch {
+            setQuestions([]);
+          }
         }
       }
     } catch {
@@ -242,6 +256,105 @@ export default function AssignmentView() {
     return 'text-emerald-500';
   };
 
+  const getSelectedOptionIdsByQuestion = (attemptResult, questionId) => {
+    return (attemptResult?.answers || [])
+      .filter(answer => answer.questionId === questionId)
+      .map(answer => answer.selectedOptionId);
+  };
+
+  const isQuestionCorrect = (question, attemptResult) => {
+    const selectedOptionIds = getSelectedOptionIdsByQuestion(attemptResult, question.id);
+    const correctOptionIds = (question.options || [])
+      .filter(option => option.isCorrect)
+      .map(option => option.id);
+
+    if (selectedOptionIds.length === 0 || correctOptionIds.length === 0) {
+      return false;
+    }
+
+    return selectedOptionIds.length === correctOptionIds.length
+      && correctOptionIds.every(optionId => selectedOptionIds.includes(optionId));
+  };
+
+  const renderQuizReview = (attemptResult) => {
+    if (!attemptResult || !questions.length) return null;
+
+    return (
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-base font-semibold text-neutral-900">Review Answers</h4>
+          <span className="text-xs text-neutral-500">Đúng / sai từng câu</span>
+        </div>
+
+        <div className="space-y-4">
+          {questions.map((question, idx) => {
+            const selectedOptionIds = getSelectedOptionIdsByQuestion(attemptResult, question.id);
+            const correctOptionIds = (question.options || [])
+              .filter(option => option.isCorrect)
+              .map(option => option.id);
+            const answeredCorrectly = isQuestionCorrect(question, attemptResult);
+            const isAnswered = selectedOptionIds.length > 0;
+
+            return (
+              <div
+                key={question.id}
+                className={`rounded-xl border p-4 ${answeredCorrectly ? 'border-emerald-200 bg-emerald-50/60' : isAnswered ? 'border-rose-200 bg-rose-50/50' : 'border-neutral-200 bg-neutral-50/60'}`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <p className="font-medium text-neutral-900">
+                      <span className="mr-2 font-bold text-primary-500">{idx + 1}.</span>
+                      {question.content}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      <span className="px-2 py-1 rounded-full bg-white/80 text-neutral-500 border border-neutral-200">
+                        {question.type === 'MULTIPLE_CHOICE' ? 'Multiple choice' : 'Single choice'}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full border ${answeredCorrectly ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : isAnswered ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-neutral-100 text-neutral-500 border-neutral-200'}`}>
+                        {answeredCorrectly ? 'Đúng' : isAnswered ? 'Sai' : 'Chưa trả lời'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold px-2 py-1 bg-white/80 text-neutral-600 rounded border border-neutral-200 shrink-0">
+                    {question.score} pts
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {question.options?.map(option => {
+                    const isSelected = selectedOptionIds.includes(option.id);
+                    const isCorrectOption = correctOptionIds.includes(option.id);
+
+                    let optionClasses = 'bg-white border-neutral-200 text-neutral-700';
+                    if (isCorrectOption && isSelected) {
+                      optionClasses = 'bg-emerald-100 border-emerald-300 text-emerald-900';
+                    } else if (isCorrectOption) {
+                      optionClasses = 'bg-emerald-50 border-emerald-200 text-emerald-900';
+                    } else if (isSelected) {
+                      optionClasses = 'bg-rose-100 border-rose-300 text-rose-900';
+                    }
+
+                    return (
+                      <div key={option.id} className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${optionClasses}`}>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isCorrectOption ? 'border-emerald-500' : isSelected ? 'border-rose-500' : 'border-neutral-300'}`}>
+                          {isCorrectOption && <CheckCircle size={10} className="text-emerald-600" />}
+                          {isSelected && !isCorrectOption && <X size={10} className="text-rose-600" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium break-words">{option.content}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const answeredCount = Object.keys(selectedAnswers).filter(k => selectedAnswers[k]?.length > 0).length;
 
   if (loading) return <LoadingSpinner text="Loading assignment..." />;
@@ -255,6 +368,7 @@ export default function AssignmentView() {
       // Lấy điểm cao nhất từ bảng submission (ưu tiên finalScore, sau đó autoScore)
       const bestScore = mySubmission ? Number(mySubmission.finalScore ?? mySubmission.autoScore ?? 0) : (quizResult.scorePercentage ?? 0);
       const passed = bestScore >= 60;
+      const reviewResult = latestAttemptResult || quizResult;
       return (
         <div className="space-y-4">
           <div className={`glass-card p-6 border-2 ${passed ? 'border-emerald-500/20' : 'border-rose-400/20'}`}>
@@ -283,6 +397,8 @@ export default function AssignmentView() {
               </button>
             )}
           </div>
+
+          {renderQuizReview(reviewResult)}
         </div>
       );
     }
@@ -502,7 +618,7 @@ export default function AssignmentView() {
             <div>
               <span className="text-xs text-neutral-400 flex items-center gap-1"><Calendar size={10} /> Due Date</span>
               <span className={`text-sm font-semibold ${isPastDue ? 'text-rose-400' : 'text-neutral-800'}`}>
-                {new Date(assignment.dueDate).toLocaleDateString()}
+                {new Date(assignment.dueDate).toLocaleString('vi-VN')}
               </span>
             </div>
           )}
@@ -634,6 +750,7 @@ export default function AssignmentView() {
                 Close
               </button>
             </div>
+            {renderQuizReview(latestAttemptResult)}
           </div>
         )}
       </Modal>

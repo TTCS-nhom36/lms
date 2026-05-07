@@ -436,7 +436,7 @@ export default function CourseDetail() {
                     <h4 className="text-sm font-medium text-neutral-800">{a.title}</h4>
                     <div className="flex items-center gap-3 text-[11px] text-neutral-400 mt-0.5">
                       <StatusBadge status={a.type} size="xs" />
-                      {a.dueDate && <span className="flex items-center gap-1"><Calendar size={10} /> {new Date(a.dueDate).toLocaleDateString()}</span>}
+                      {a.dueDate && <span className="flex items-center gap-1"><Calendar size={10} /> {new Date(a.dueDate).toLocaleString('vi-VN')}</span>}
                       {a.timeLimitMins > 0 && <span className="flex items-center gap-1"><Clock size={10} /> {a.timeLimitMins}m</span>}
                     </div>
                   </div>
