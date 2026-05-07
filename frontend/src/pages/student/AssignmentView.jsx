@@ -187,19 +187,16 @@ export default function AssignmentView() {
         answers: answersList
       });
 
-      // Save quiz score to submission
-      await assignmentApi.submit(id, { autoScore: res.data.scorePercentage });
+      // Save quiz score to submission using raw points of correct answers
+      await assignmentApi.submit(id, { autoScore: res.data.totalScore });
 
-      if (!isAutoSubmit) toast.success('Quiz submitted successfully! 🎉');
       setQuizResult(res.data);
       setLatestAttemptResult(res.data);
-      setShowResultModal(true);
       setQuizStarted(false);
       setTimeLeft(null);
       loadData(); // Tải lại data để lấy best score từ bảng submission
     } catch (error) {
       console.error('Submit quiz error:', error);
-      toast.error('Failed to submit quiz');
     } finally {
       setSubmitting(false);
     }
@@ -357,6 +354,13 @@ export default function AssignmentView() {
 
   const answeredCount = Object.keys(selectedAnswers).filter(k => selectedAnswers[k]?.length > 0).length;
 
+  const getScorePercentFromResult = (result) => {
+    const maxScore = Number(result?.maxScore ?? assignment?.maxScore ?? 0);
+    const totalScore = Number(result?.totalScore ?? 0);
+    if (!maxScore) return 0;
+    return (totalScore / maxScore) * 100;
+  };
+
   if (loading) return <LoadingSpinner text="Loading assignment..." />;
   if (!assignment) return null;
 
@@ -366,8 +370,10 @@ export default function AssignmentView() {
     // Show result
     if (quizResult && !quizStarted) {
       // Lấy điểm cao nhất từ bảng submission (ưu tiên finalScore, sau đó autoScore)
-      const bestScore = mySubmission ? Number(mySubmission.finalScore ?? mySubmission.autoScore ?? 0) : (quizResult.scorePercentage ?? 0);
-      const passed = bestScore >= 60;
+      const bestScore = mySubmission ? Number(mySubmission.finalScore ?? mySubmission.autoScore ?? 0) : Number(quizResult.totalScore ?? 0);
+      const maxScore = Number(assignment?.maxScore ?? quizResult?.maxScore ?? 0);
+      const bestScorePercent = maxScore ? (bestScore / maxScore) * 100 : 0;
+      const passed = bestScorePercent >= 60;
       const reviewResult = latestAttemptResult || quizResult;
       return (
         <div className="space-y-4">
@@ -380,7 +386,7 @@ export default function AssignmentView() {
               <div>
                 <span className="text-xs text-neutral-400 block mb-1">Best Score</span>
                 <span className={`text-3xl font-bold ${passed ? 'text-emerald-500' : 'text-rose-400'}`}>
-                  {bestScore.toFixed(1)}%
+                  {bestScore.toFixed(2)} / {maxScore.toFixed(2)}
                 </span>
               </div>
               <div className="text-sm text-neutral-500 mt-2">
@@ -731,8 +737,8 @@ export default function AssignmentView() {
           <div className="space-y-4">
             <div className="flex flex-col items-center justify-center py-6 bg-neutral-50 rounded-xl">
               <span className="text-sm text-neutral-500 mb-2">Your Score</span>
-              <span className={`text-4xl font-bold ${latestAttemptResult.scorePercentage >= 60 ? 'text-emerald-500' : 'text-rose-400'}`}>
-                {latestAttemptResult.scorePercentage.toFixed(1)}%
+              <span className={`text-4xl font-bold ${getScorePercentFromResult(latestAttemptResult) >= 60 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                {Number(latestAttemptResult.totalScore ?? 0).toFixed(2)} / {Number(latestAttemptResult.maxScore ?? assignment?.maxScore ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-4">

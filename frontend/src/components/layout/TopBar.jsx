@@ -3,23 +3,23 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   Bell, LogOut, UserCircle2, ChevronDown, GraduationCap,
-  LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X,
+  LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X, BarChart3,
 } from 'lucide-react';
 
 /* ─── Menu definitions ─── */
 const adminMenu = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/admin/dashboard' },
+  { label: 'Analytics', icon: BarChart3, path: '/admin/analytics' },
   { label: 'Users', icon: User, path: '/admin/users' },
   { label: 'Courses', icon: BookOpen, path: '/admin/courses' },
 ];
 
 const instructorMenu = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/instructor/dashboard' },
+  { label: 'Analytics', icon: BarChart3, path: '/instructor/analytics' },
   { label: 'My Courses', icon: BookOpen, path: '/instructor/courses' },
 ];
 
 const studentMenu = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/student/dashboard' },
   { label: 'Browse', icon: Compass, path: '/student/browse' },
   { label: 'My Courses', icon: BookMarked, path: '/student/my-courses' },
 ];

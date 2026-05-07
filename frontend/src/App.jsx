@@ -16,16 +16,17 @@ import AdminUsers from './pages/admin/Users';
 import AdminCourses from './pages/admin/Courses';
 import AdminCourseEditor from './pages/admin/CourseEditor';
 import AdminSubmissions from './pages/admin/Submissions';
+import AdminCourseAnalytics from './pages/admin/CourseAnalytics';
 
 // Instructor
-import InstructorDashboard from './pages/instructor/Dashboard';
+import InstructorCourses from './pages/instructor/Courses';
 import CourseEditor from './pages/instructor/CourseEditor';
 import Assignments from './pages/instructor/Assignments';
 import Submissions from './pages/instructor/Submissions';
 import Gradebook from './pages/instructor/Gradebook';
+import TeachingAnalytics from './pages/instructor/TeachingAnalytics';
 
 // Student
-import StudentDashboard from './pages/student/Dashboard';
 import BrowseCourses from './pages/student/BrowseCourses';
 import MyCourses from './pages/student/MyCourses';
 import AssignmentView from './pages/student/AssignmentView';
@@ -34,7 +35,7 @@ import StudentGradebook from './pages/student/StudentGradebook';
 function RoleRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  const routes = { ADMIN: '/admin/dashboard', INSTRUCTOR: '/instructor/dashboard', STUDENT: '/student/dashboard' };
+  const routes = { ADMIN: '/admin/dashboard', INSTRUCTOR: '/instructor/courses', STUDENT: '/student/my-courses' };
   return <Navigate to={routes[user.role] || '/login'} replace />;
 }
 
@@ -58,14 +59,15 @@ function App() {
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/courses" element={<AdminCourses />} />
+              <Route path="/admin/analytics" element={<AdminCourseAnalytics />} />
               <Route path="/admin/courses/new" element={<AdminCourseEditor />} />
               <Route path="/admin/courses/:id/edit" element={<AdminCourseEditor />} />
               <Route path="/admin/courses/:courseId/submissions/:assignmentId" element={<AdminSubmissions />} />
               <Route path="/admin/courses/:id" element={<CourseDetail />} />
 
               {/* Instructor */}
-              <Route path="/instructor/dashboard" element={<InstructorDashboard />} />
-              <Route path="/instructor/courses" element={<InstructorDashboard />} />
+              <Route path="/instructor/courses" element={<InstructorCourses />} />
+              <Route path="/instructor/analytics" element={<TeachingAnalytics />} />
               <Route path="/instructor/courses/new" element={<CourseEditor />} />
               <Route path="/instructor/courses/:id/edit" element={<CourseEditor />} />
               <Route path="/instructor/courses/:courseId/assignments" element={<Assignments />} />
@@ -73,7 +75,6 @@ function App() {
               <Route path="/instructor/courses/:courseId/gradebook" element={<Gradebook />} />
 
               {/* Student */}
-              <Route path="/student/dashboard" element={<StudentDashboard />} />
               <Route path="/student/browse" element={<BrowseCourses />} />
               <Route path="/student/my-courses" element={<MyCourses />} />
               <Route path="/student/performance" element={<StudentGradebook />} />
