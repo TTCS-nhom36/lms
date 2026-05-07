@@ -23,6 +23,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+
 
 @Getter
 @Setter
@@ -39,6 +42,7 @@ public class Lesson {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "chapter_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Chapter chapter;
 
     @Column(name = "title", nullable = false, length = 255)
@@ -59,6 +63,7 @@ public class Lesson {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unlock_condition_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Lesson unlockCondition;
 
     @Builder.Default

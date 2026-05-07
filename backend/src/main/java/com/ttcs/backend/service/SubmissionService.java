@@ -4,20 +4,20 @@ import com.ttcs.backend.dto.request.GradeSubmissionRequest;
 import com.ttcs.backend.dto.request.SubmitRequest;
 import com.ttcs.backend.dto.response.SubmissionResponse;
 import com.ttcs.backend.entity.Assignment;
+import com.ttcs.backend.entity.QuizAttempt;
 import com.ttcs.backend.entity.Submission;
 import com.ttcs.backend.entity.User;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.SubmissionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
+import com.ttcs.backend.repository.QuizAttemptRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,13 +30,15 @@ public class SubmissionService {
 
     private final SubmissionRepository submissionRepository;
     private final AssignmentRepository assignmentRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
     private final UserRepository userRepository;
     private final SubmissionMapper submissionMapper;
     private final S3Service s3Service;
 
-    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service) {
+    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, QuizAttemptRepository quizAttemptRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service) {
         this.submissionRepository = submissionRepository;
         this.assignmentRepository = assignmentRepository;
+        this.quizAttemptRepository = quizAttemptRepository;
         this.userRepository = userRepository;
         this.submissionMapper = submissionMapper;
         this.s3Service = s3Service;
@@ -56,55 +58,30 @@ public class SubmissionService {
         Assignment assignment = findAssignmentById(request.getAssignmentId());
         User user = findUserById(request.getUserId());
 
-        // Tính điểm cho submission mới
-        BigDecimal newScore = request.getAutoScore();
-
-        // Lấy tất cả submission cũ của cùng (userId, assignmentId)
         List<Submission> existing = submissionRepository
                 .findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId());
-
         if (!existing.isEmpty()) {
-            // Tìm bản ghi có điểm cao nhất trong danh sách cũ
-            Optional<Submission> bestOpt = existing.stream()
-                    .max(Comparator.comparing(s -> effectiveScore(s), Comparator.nullsFirst(Comparator.naturalOrder())));
-
-            Submission best = bestOpt.get();
-            BigDecimal bestScore = effectiveScore(best);
-
-            // Xoá tất cả bản ghi cũ trừ bản ghi tốt nhất
-            existing.stream()
-                    .filter(s -> !s.getId().equals(best.getId()))
-                    .forEach(submissionRepository::delete);
+            submissionRepository.deleteAll(existing);
             submissionRepository.flush();
-
-            // Nếu điểm mới >= điểm tốt nhất cũ → cập nhật bản ghi tốt nhất
-            BigDecimal newEffective = newScore != null ? newScore : BigDecimal.ZERO;
-            if (bestScore == null || newEffective.compareTo(bestScore) >= 0) {
-                best.setAutoScore(newScore);
-                best.setFinalScore(newScore);
-                best.setSubmittedAt(LocalDateTime.now());
-                return submissionMapper.toResponse(submissionRepository.save(best));
-            }
-
-            // Điểm mới thấp hơn → giữ nguyên bản ghi tốt nhất, không lưu bản mới
-            return submissionMapper.toResponse(best);
         }
 
-        // Chưa có bản ghi nào → tạo mới bình thường
         Submission submission = submissionMapper.toEntity(request);
         submission.setAssignment(assignment);
         submission.setUser(user);
+
+        if (assignment.getType() == com.ttcs.backend.enums.AssignmentType.QUIZ) {
+            QuizAttempt quizAttempt = quizAttemptRepository.findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId())
+                    .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND,
+                            "Quiz attempt not found for user " + request.getUserId() + " and assignment " + request.getAssignmentId()));
+            submission.setQuizAttempt(quizAttempt);
+        }
+
+        BigDecimal newScore = request.getAutoScore();
         if (newScore != null) {
             submission.setAutoScore(newScore);
             submission.setFinalScore(newScore);
         }
         return submissionMapper.toResponse(submissionRepository.save(submission));
-    }
-
-    /** Trả về điểm hiệu quả: ưu tiên finalScore, nếu null thì lấy autoScore */
-    private BigDecimal effectiveScore(Submission s) {
-        if (s.getFinalScore() != null) return s.getFinalScore();
-        return s.getAutoScore();
     }
 
     public SubmissionResponse update(Long id, SubmitRequest request) {
