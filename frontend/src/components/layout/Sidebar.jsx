@@ -16,14 +16,12 @@ const adminMenu = {
 
 const instructorMenu = {
   main: [
-    { label: 'Dashboard', icon: LayoutDashboard, path: '/instructor/dashboard' },
     { label: 'My Courses', icon: BookOpen, path: '/instructor/courses' },
   ],
 };
 
 const studentMenu = {
   main: [
-    { label: 'Dashboard', icon: LayoutDashboard, path: '/student/dashboard' },
     { label: 'Browse Courses', icon: Compass, path: '/student/browse' },
     { label: 'My Courses', icon: BookMarked, path: '/student/my-courses' },
   ],
