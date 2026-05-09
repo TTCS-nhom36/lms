@@ -1,5 +1,6 @@
 import { Outlet, Navigate } from 'react-router-dom';
 import TopBar from './TopBar';
+import ChatWidget from '../chat/ChatWidget';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function MainLayout() {
@@ -20,6 +21,8 @@ export default function MainLayout() {
           </div>
         </div>
       </main>
+
+      <ChatWidget />
     </div>
   );
 }

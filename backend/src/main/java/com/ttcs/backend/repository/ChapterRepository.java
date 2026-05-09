@@ -15,4 +15,7 @@ public interface ChapterRepository extends JpaRepository<Chapter, Long> {
 	@Override
 	@EntityGraph(attributePaths = {"course"})
 	Optional<Chapter> findById(Long id);
+
+	@EntityGraph(attributePaths = {"course", "lessons"})
+	List<Chapter> findByCourseIdOrderByOrderIndex(Long courseId);
 }
