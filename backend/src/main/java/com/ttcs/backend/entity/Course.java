@@ -1,9 +1,11 @@
 package com.ttcs.backend.entity;
 
 import com.ttcs.backend.enums.CourseStatus;
+import com.ttcs.backend.listener.RagEntityListener;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -24,6 +26,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 @Getter
 @Setter
@@ -32,6 +36,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Entity
 @Table(name = "courses")
+@EntityListeners(RagEntityListener.class)
 public class Course {
 
     @Id
@@ -53,6 +58,7 @@ public class Course {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User createdBy;
 
     @Builder.Default

@@ -42,6 +42,8 @@ export default function AssignmentView() {
   const [quizStarted, setQuizStarted] = useState(false);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [showRetryConfirm, setShowRetryConfirm] = useState(false);
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [latestAttemptResult, setLatestAttemptResult] = useState(null);
 
   // Countdown timer
   const [timeLeft, setTimeLeft] = useState(null); // seconds
@@ -61,26 +63,41 @@ export default function AssignmentView() {
       const assignmentData = aRes.data;
       setAssignment(assignmentData);
 
+      let submissionData = null;
+      let quizAttemptResult = null;
+
+      // Luôn cố gắng tải submission của user (áp dụng cho cả Quiz và các loại khác)
+      try {
+        const sRes = await assignmentApi.getMySubmission(id);
+        setMySubmission(sRes.data);
+        submissionData = sRes.data;
+        // Fetch download URL if a file was submitted
+        if (sRes.data?.id && sRes.data?.fileUrl) {
+          try {
+            const urlRes = await submissionApi.getFileUrl(sRes.data.id);
+            setSubmissionFileUrl(urlRes.data.url);
+          } catch { /* file might not exist yet */ }
+        }
+      } catch {
+        setMySubmission(null);
+      }
+
       if (assignmentData.type === 'QUIZ') {
         try {
           const attemptRes = await quizAttemptApi.getMyAttempt(id);
           setQuizResult(attemptRes.data);
+          quizAttemptResult = attemptRes.data;
         } catch {
           setQuizResult(null);
         }
-      } else {
-        try {
-          const sRes = await assignmentApi.getMySubmission(id);
-          setMySubmission(sRes.data);
-          // Fetch download URL if a file was submitted
-          if (sRes.data?.id && sRes.data?.fileUrl) {
-            try {
-              const urlRes = await submissionApi.getFileUrl(sRes.data.id);
-              setSubmissionFileUrl(urlRes.data.url);
-            } catch { /* file might not exist yet */ }
+
+        if (quizAttemptResult || submissionData) {
+          try {
+            const qRes = await assignmentApi.getQuestions(id);
+            setQuestions(qRes.data || []);
+          } catch {
+            setQuestions([]);
           }
-        } catch {
-          setMySubmission(null);
         }
       }
     } catch {
@@ -170,16 +187,16 @@ export default function AssignmentView() {
         answers: answersList
       });
 
-      // Save quiz score to submission
-      await assignmentApi.submit(id, { autoScore: res.data.scorePercentage });
+      // Save quiz score to submission using raw points of correct answers
+      await assignmentApi.submit(id, { autoScore: res.data.totalScore });
 
-      if (!isAutoSubmit) toast.success('Quiz submitted successfully! 🎉');
       setQuizResult(res.data);
+      setLatestAttemptResult(res.data);
       setQuizStarted(false);
       setTimeLeft(null);
+      loadData(); // Tải lại data để lấy best score từ bảng submission
     } catch (error) {
       console.error('Submit quiz error:', error);
-      toast.error('Failed to submit quiz');
     } finally {
       setSubmitting(false);
     }
@@ -236,7 +253,113 @@ export default function AssignmentView() {
     return 'text-emerald-500';
   };
 
+  const getSelectedOptionIdsByQuestion = (attemptResult, questionId) => {
+    return (attemptResult?.answers || [])
+      .filter(answer => answer.questionId === questionId)
+      .map(answer => answer.selectedOptionId);
+  };
+
+  const isQuestionCorrect = (question, attemptResult) => {
+    const selectedOptionIds = getSelectedOptionIdsByQuestion(attemptResult, question.id);
+    const correctOptionIds = (question.options || [])
+      .filter(option => option.isCorrect)
+      .map(option => option.id);
+
+    if (selectedOptionIds.length === 0 || correctOptionIds.length === 0) {
+      return false;
+    }
+
+    return selectedOptionIds.length === correctOptionIds.length
+      && correctOptionIds.every(optionId => selectedOptionIds.includes(optionId));
+  };
+
+  const renderQuizReview = (attemptResult) => {
+    if (!attemptResult || !questions.length) return null;
+
+    return (
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-base font-semibold text-neutral-900">Review Answers</h4>
+          <span className="text-xs text-neutral-500">Đúng / sai từng câu</span>
+        </div>
+
+        <div className="space-y-4">
+          {questions.map((question, idx) => {
+            const selectedOptionIds = getSelectedOptionIdsByQuestion(attemptResult, question.id);
+            const correctOptionIds = (question.options || [])
+              .filter(option => option.isCorrect)
+              .map(option => option.id);
+            const answeredCorrectly = isQuestionCorrect(question, attemptResult);
+            const isAnswered = selectedOptionIds.length > 0;
+
+            return (
+              <div
+                key={question.id}
+                className={`rounded-xl border p-4 ${answeredCorrectly ? 'border-emerald-200 bg-emerald-50/60' : isAnswered ? 'border-rose-200 bg-rose-50/50' : 'border-neutral-200 bg-neutral-50/60'}`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <p className="font-medium text-neutral-900">
+                      <span className="mr-2 font-bold text-primary-500">{idx + 1}.</span>
+                      {question.content}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      <span className="px-2 py-1 rounded-full bg-white/80 text-neutral-500 border border-neutral-200">
+                        {question.type === 'MULTIPLE_CHOICE' ? 'Multiple choice' : 'Single choice'}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full border ${answeredCorrectly ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : isAnswered ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-neutral-100 text-neutral-500 border-neutral-200'}`}>
+                        {answeredCorrectly ? 'Đúng' : isAnswered ? 'Sai' : 'Chưa trả lời'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold px-2 py-1 bg-white/80 text-neutral-600 rounded border border-neutral-200 shrink-0">
+                    {question.score} pts
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {question.options?.map(option => {
+                    const isSelected = selectedOptionIds.includes(option.id);
+                    const isCorrectOption = correctOptionIds.includes(option.id);
+
+                    let optionClasses = 'bg-white border-neutral-200 text-neutral-700';
+                    if (isCorrectOption && isSelected) {
+                      optionClasses = 'bg-emerald-100 border-emerald-300 text-emerald-900';
+                    } else if (isCorrectOption) {
+                      optionClasses = 'bg-emerald-50 border-emerald-200 text-emerald-900';
+                    } else if (isSelected) {
+                      optionClasses = 'bg-rose-100 border-rose-300 text-rose-900';
+                    }
+
+                    return (
+                      <div key={option.id} className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${optionClasses}`}>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isCorrectOption ? 'border-emerald-500' : isSelected ? 'border-rose-500' : 'border-neutral-300'}`}>
+                          {isCorrectOption && <CheckCircle size={10} className="text-emerald-600" />}
+                          {isSelected && !isCorrectOption && <X size={10} className="text-rose-600" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium break-words">{option.content}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const answeredCount = Object.keys(selectedAnswers).filter(k => selectedAnswers[k]?.length > 0).length;
+
+  const getScorePercentFromResult = (result) => {
+    const maxScore = Number(result?.maxScore ?? assignment?.maxScore ?? 0);
+    const totalScore = Number(result?.totalScore ?? 0);
+    if (!maxScore) return 0;
+    return (totalScore / maxScore) * 100;
+  };
 
   if (loading) return <LoadingSpinner text="Loading assignment..." />;
   if (!assignment) return null;
@@ -246,8 +369,12 @@ export default function AssignmentView() {
   const renderQuizMode = () => {
     // Show result
     if (quizResult && !quizStarted) {
-      const pct = quizResult.scorePercentage ?? 0;
-      const passed = pct >= 60;
+      // Lấy điểm cao nhất từ bảng submission (ưu tiên finalScore, sau đó autoScore)
+      const bestScore = mySubmission ? Number(mySubmission.finalScore ?? mySubmission.autoScore ?? 0) : Number(quizResult.totalScore ?? 0);
+      const maxScore = Number(assignment?.maxScore ?? quizResult?.maxScore ?? 0);
+      const bestScorePercent = maxScore ? (bestScore / maxScore) * 100 : 0;
+      const passed = bestScorePercent >= 60;
+      const reviewResult = latestAttemptResult || quizResult;
       return (
         <div className="space-y-4">
           <div className={`glass-card p-6 border-2 ${passed ? 'border-emerald-500/20' : 'border-rose-400/20'}`}>
@@ -255,20 +382,14 @@ export default function AssignmentView() {
               <CheckCircle size={18} className={passed ? 'text-emerald-500' : 'text-rose-400'} />
               Quiz Result
             </h3>
-            <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl mb-4">
+            <div className="grid grid-cols-1 gap-4 bg-neutral-50 p-4 rounded-xl mb-4">
               <div>
-                <span className="text-xs text-neutral-400 block mb-1">Score</span>
+                <span className="text-xs text-neutral-400 block mb-1">Best Score</span>
                 <span className={`text-3xl font-bold ${passed ? 'text-emerald-500' : 'text-rose-400'}`}>
-                  {pct.toFixed(1)}%
+                  {bestScore.toFixed(2)} / {maxScore.toFixed(2)}
                 </span>
               </div>
-              <div>
-                <span className="text-xs text-neutral-400 block mb-1">Correct Answers</span>
-                <span className="text-3xl font-bold text-neutral-900">
-                  {quizResult.correctAnswers} / {quizResult.totalQuestions}
-                </span>
-              </div>
-              <div className="col-span-2 text-sm text-neutral-500">
+              <div className="text-sm text-neutral-500 mt-2">
                 Submitted at: {new Date(quizResult.submittedAt).toLocaleString()}
               </div>
             </div>
@@ -282,6 +403,8 @@ export default function AssignmentView() {
               </button>
             )}
           </div>
+
+          {renderQuizReview(reviewResult)}
         </div>
       );
     }
@@ -501,7 +624,7 @@ export default function AssignmentView() {
             <div>
               <span className="text-xs text-neutral-400 flex items-center gap-1"><Calendar size={10} /> Due Date</span>
               <span className={`text-sm font-semibold ${isPastDue ? 'text-rose-400' : 'text-neutral-800'}`}>
-                {new Date(assignment.dueDate).toLocaleDateString()}
+                {new Date(assignment.dueDate).toLocaleString('vi-VN')}
               </span>
             </div>
           )}
@@ -606,6 +729,36 @@ export default function AssignmentView() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Result Modal for just completed quiz */}
+      <Modal isOpen={showResultModal} onClose={() => setShowResultModal(false)} title="Quiz Attempt Result" size="sm">
+        {latestAttemptResult && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center justify-center py-6 bg-neutral-50 rounded-xl">
+              <span className="text-sm text-neutral-500 mb-2">Your Score</span>
+              <span className={`text-4xl font-bold ${getScorePercentFromResult(latestAttemptResult) >= 60 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                {Number(latestAttemptResult.totalScore ?? 0).toFixed(2)} / {Number(latestAttemptResult.maxScore ?? assignment?.maxScore ?? 0).toFixed(2)}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white border border-neutral-200 p-4 rounded-xl text-center">
+                <span className="text-xs text-neutral-400 block mb-1">Correct</span>
+                <span className="text-xl font-bold text-emerald-500">{latestAttemptResult.correctAnswers}</span>
+              </div>
+              <div className="bg-white border border-neutral-200 p-4 rounded-xl text-center">
+                <span className="text-xs text-neutral-400 block mb-1">Total Questions</span>
+                <span className="text-xl font-bold text-neutral-900">{latestAttemptResult.totalQuestions}</span>
+              </div>
+            </div>
+            <div className="pt-4 flex">
+              <button onClick={() => setShowResultModal(false)} className="btn-primary flex-1">
+                Close
+              </button>
+            </div>
+            {renderQuizReview(latestAttemptResult)}
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -21,6 +21,8 @@ public class SubmitQuizResponse {
     private Long assignmentId;
     private int totalQuestions;
     private int correctAnswers;
+    private double totalScore;
+    private double maxScore;
     private double scorePercentage;
     private List<SelectedAnswerResponse> answers;
     private LocalDateTime submittedAt;

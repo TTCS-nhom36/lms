@@ -1,9 +1,11 @@
 package com.ttcs.backend.entity;
 
 import com.ttcs.backend.enums.QuestionType;
+import com.ttcs.backend.listener.RagEntityListener;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -23,6 +25,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 @Getter
 @Setter
@@ -31,6 +35,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Entity
 @Table(name = "questions")
+@EntityListeners(RagEntityListener.class)
 public class Question {
 
     @Id
@@ -39,6 +44,7 @@ public class Question {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignment_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Assignment assignment;
 
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")

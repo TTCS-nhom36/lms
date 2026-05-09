@@ -1,9 +1,11 @@
 package com.ttcs.backend.entity;
 
 import com.ttcs.backend.enums.AssignmentType;
+import com.ttcs.backend.listener.RagEntityListener;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -24,6 +26,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 @Getter
 @Setter
@@ -32,6 +36,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Entity
 @Table(name = "assignments")
+@EntityListeners(RagEntityListener.class)
 public class Assignment {
 
     @Id
@@ -40,10 +45,12 @@ public class Assignment {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lesson_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Lesson lesson;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "course_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Course course;
 
     @Column(name = "title", nullable = false, length = 255)
@@ -84,6 +91,7 @@ public class Assignment {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User createdBy;
 
     @Builder.Default
