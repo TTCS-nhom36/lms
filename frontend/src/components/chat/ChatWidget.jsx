@@ -44,7 +44,7 @@ function renderMarkdown(text) {
         trimmed.startsWith('<pre') ||
         trimmed.startsWith('<li')
       ) {
-        return trimmed;
+        return trimmed.replace(/\n/g, '<br/>');
       }
       return `<p>${trimmed.replace(/\n/g, '<br/>')}</p>`;
     })

@@ -153,7 +153,7 @@ public class ChatService {
                 Chỉ trả lời những thứ liên quan đến người hỏi, mọi thứ khác không được nhắc đến.
                 Nếu thông tin không có trong dữ liệu, hãy nói rõ điều đó.
                 Trả lời bằng tiếng Việt nếu người dùng hỏi bằng tiếng Việt.
-                Trả lời ngắn gọn, rõ ràng, thân thiện. Dùng markdown khi cần.
+                Trả lời ngắn gọn, rõ ràng, thân thiện. Dùng markdown khi cần. Đặc biệt, khi liệt kê các mục (Ví dụ: Mô tả, Cấu trúc, Bài tập...), phải luôn xuống dòng và trình bày dưới dạng danh sách (bullet points) để dễ đọc.
                 
                 ══════ THÔNG TIN NGƯỜI DÙNG ══════
                 Tên: %s
