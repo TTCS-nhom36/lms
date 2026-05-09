@@ -4,18 +4,20 @@ import com.ttcs.backend.dto.request.GradeSubmissionRequest;
 import com.ttcs.backend.dto.request.SubmitRequest;
 import com.ttcs.backend.dto.response.SubmissionResponse;
 import com.ttcs.backend.entity.Assignment;
+import com.ttcs.backend.entity.QuizAttempt;
 import com.ttcs.backend.entity.Submission;
 import com.ttcs.backend.entity.User;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.SubmissionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
+import com.ttcs.backend.repository.QuizAttemptRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
 import java.util.List;
-import java.util.UUID;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,13 +30,15 @@ public class SubmissionService {
 
     private final SubmissionRepository submissionRepository;
     private final AssignmentRepository assignmentRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
     private final UserRepository userRepository;
     private final SubmissionMapper submissionMapper;
     private final S3Service s3Service;
 
-    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service) {
+    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, QuizAttemptRepository quizAttemptRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service) {
         this.submissionRepository = submissionRepository;
         this.assignmentRepository = assignmentRepository;
+        this.quizAttemptRepository = quizAttemptRepository;
         this.userRepository = userRepository;
         this.submissionMapper = submissionMapper;
         this.s3Service = s3Service;
@@ -51,12 +55,31 @@ public class SubmissionService {
     }
 
     public SubmissionResponse create(SubmitRequest request) {
+        Assignment assignment = findAssignmentById(request.getAssignmentId());
+        User user = findUserById(request.getUserId());
+
+        List<Submission> existing = submissionRepository
+                .findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId());
+        if (!existing.isEmpty()) {
+            submissionRepository.deleteAll(existing);
+            submissionRepository.flush();
+        }
+
         Submission submission = submissionMapper.toEntity(request);
-        submission.setAssignment(findAssignmentById(request.getAssignmentId()));
-        submission.setUser(findUserById(request.getUserId()));
-        if (request.getAutoScore() != null) {
-            submission.setAutoScore(request.getAutoScore());
-            submission.setFinalScore(request.getAutoScore());
+        submission.setAssignment(assignment);
+        submission.setUser(user);
+
+        if (assignment.getType() == com.ttcs.backend.enums.AssignmentType.QUIZ) {
+            QuizAttempt quizAttempt = quizAttemptRepository.findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId())
+                    .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND,
+                            "Quiz attempt not found for user " + request.getUserId() + " and assignment " + request.getAssignmentId()));
+            submission.setQuizAttempt(quizAttempt);
+        }
+
+        BigDecimal newScore = request.getAutoScore();
+        if (newScore != null) {
+            submission.setAutoScore(newScore);
+            submission.setFinalScore(newScore);
         }
         return submissionMapper.toResponse(submissionRepository.save(submission));
     }

@@ -23,6 +23,12 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+
+
+import com.ttcs.backend.listener.RagEntityListener;
+import jakarta.persistence.EntityListeners;
 
 @Getter
 @Setter
@@ -31,6 +37,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Entity
 @Table(name = "lessons")
+@EntityListeners(RagEntityListener.class)
 public class Lesson {
 
     @Id
@@ -39,6 +46,7 @@ public class Lesson {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "chapter_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Chapter chapter;
 
     @Column(name = "title", nullable = false, length = 255)
@@ -59,6 +67,7 @@ public class Lesson {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unlock_condition_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Lesson unlockCondition;
 
     @Builder.Default

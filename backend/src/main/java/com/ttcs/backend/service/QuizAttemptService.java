@@ -21,8 +21,14 @@ import com.ttcs.backend.repository.QuestionRepository;
 import com.ttcs.backend.repository.QuizAttemptRepository;
 import com.ttcs.backend.repository.SelectedAnswerRepository;
 import com.ttcs.backend.repository.UserRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -123,22 +129,17 @@ public class QuizAttemptService {
                 .map(quizAttemptMapper::toSelectedAnswerResponse)
                 .toList();
 
-        int totalQuestions = answerResponses.size();
-        int correctAnswers = (int) answerResponses.stream()
-                .filter(a -> Boolean.TRUE.equals(a.getIsCorrect()))
-                .count();
+        ScoreSummary scoreSummary = calculateScoreSummary(attempt.getAssignment().getId(), savedAnswers);
 
-        double scorePercentage = totalQuestions > 0
-                ? (double) correctAnswers / totalQuestions * 100.0
-                : 0.0;
-//
         return SubmitQuizResponse.builder()
                 .attemptId(attempt.getId())
                 .userId(attempt.getUser().getId())
                 .assignmentId(attempt.getAssignment().getId())
-                .totalQuestions(totalQuestions)
-                .correctAnswers(correctAnswers)
-                .scorePercentage(scorePercentage)
+                .totalQuestions(scoreSummary.totalQuestions())
+                .correctAnswers(scoreSummary.correctQuestions())
+                .totalScore(scoreSummary.totalScore().doubleValue())
+                .maxScore(scoreSummary.maxScore().doubleValue())
+                .scorePercentage(scoreSummary.scorePercentage())
                 .answers(answerResponses)
                 .submittedAt(attempt.getCreatedAt())
                 .build();
@@ -149,27 +150,23 @@ public class QuizAttemptService {
         QuizAttempt attempt = quizAttemptRepository.findById(attemptId)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Attempt not found: " + attemptId));
 
-        List<SelectedAnswerResponse> answerResponses = selectedAnswerRepository.findByQuizAttemptId(attemptId)
-                .stream()
+        List<SelectedAnswer> selectedAnswers = selectedAnswerRepository.findByQuizAttemptId(attemptId);
+
+        List<SelectedAnswerResponse> answerResponses = selectedAnswers.stream()
                 .map(quizAttemptMapper::toSelectedAnswerResponse)
                 .toList();
 
-        int totalQuestions = answerResponses.size();
-        int correctAnswers = (int) answerResponses.stream()
-                .filter(a -> Boolean.TRUE.equals(a.getIsCorrect()))
-                .count();
-
-        double scorePercentage = totalQuestions > 0
-                ? (double) correctAnswers / totalQuestions * 100.0
-                : 0.0;
+        ScoreSummary scoreSummary = calculateScoreSummary(attempt.getAssignment().getId(), selectedAnswers);
 
         return SubmitQuizResponse.builder()
                 .attemptId(attempt.getId())
                 .userId(attempt.getUser().getId())
                 .assignmentId(attempt.getAssignment().getId())
-                .totalQuestions(totalQuestions)
-                .correctAnswers(correctAnswers)
-                .scorePercentage(scorePercentage)
+                .totalQuestions(scoreSummary.totalQuestions())
+                .correctAnswers(scoreSummary.correctQuestions())
+                .totalScore(scoreSummary.totalScore().doubleValue())
+                .maxScore(scoreSummary.maxScore().doubleValue())
+                .scorePercentage(scoreSummary.scorePercentage())
                 .answers(answerResponses)
                 .submittedAt(attempt.getCreatedAt())
                 .build();
@@ -183,5 +180,72 @@ public class QuizAttemptService {
         // Return the result of the attempt
         return getAttemptResult(attempt.getId());
     }
+
+        private ScoreSummary calculateScoreSummary(Long assignmentId, List<SelectedAnswer> selectedAnswers) {
+                List<Question> assignmentQuestions = questionRepository.findByAssignmentId(assignmentId);
+
+                Map<Long, Set<Long>> selectedOptionIdsByQuestion = new HashMap<>();
+                for (SelectedAnswer answer : selectedAnswers) {
+                        if (answer.getQuestion() == null || answer.getSelectedOption() == null) {
+                                continue;
+                        }
+                        Long questionId = answer.getQuestion().getId();
+                        selectedOptionIdsByQuestion
+                                        .computeIfAbsent(questionId, key -> new HashSet<>())
+                                        .add(answer.getSelectedOption().getId());
+                }
+
+                BigDecimal totalScore = BigDecimal.ZERO;
+                BigDecimal maxScore = BigDecimal.ZERO;
+                int correctQuestions = 0;
+
+                for (Question question : assignmentQuestions) {
+                        BigDecimal questionScore = question.getScore() != null ? question.getScore() : BigDecimal.ZERO;
+                        maxScore = maxScore.add(questionScore);
+
+                        Set<Long> correctOptionIds = question.getOptions().stream()
+                                        .filter(option -> Boolean.TRUE.equals(option.getIsCorrect()))
+                                        .map(QuestionOption::getId)
+                                        .collect(java.util.stream.Collectors.toSet());
+                        Set<Long> selectedOptionIds = selectedOptionIdsByQuestion.getOrDefault(question.getId(), java.util.Collections.emptySet());
+
+                        if (!correctOptionIds.isEmpty()
+                                        && selectedOptionIds.size() == correctOptionIds.size()
+                                        && selectedOptionIds.containsAll(correctOptionIds)) {
+                                correctQuestions++;
+                                totalScore = totalScore.add(questionScore);
+                        }
+                }
+
+                // Normalize score to 0-10 scale
+                BigDecimal normalizedScore = BigDecimal.ZERO;
+                if (maxScore.compareTo(BigDecimal.ZERO) > 0) {
+                    normalizedScore = totalScore.divide(maxScore, 4, RoundingMode.HALF_UP).multiply(BigDecimal.TEN);
+                    // Cap at 10
+                    if (normalizedScore.compareTo(BigDecimal.TEN) > 0) {
+                        normalizedScore = BigDecimal.TEN;
+                    }
+                }
+                normalizedScore = normalizedScore.setScale(2, RoundingMode.HALF_UP);
+
+                double scorePercentage = normalizedScore.divide(BigDecimal.TEN, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
+
+                return new ScoreSummary(
+                                assignmentQuestions.size(),
+                                correctQuestions,
+                                normalizedScore,
+                                BigDecimal.TEN,
+                                scorePercentage
+                );
+        }
+
+        private record ScoreSummary(
+                        int totalQuestions,
+                        int correctQuestions,
+                        BigDecimal totalScore,
+                        BigDecimal maxScore,
+                        double scorePercentage
+        ) {
+        }
 //
 }

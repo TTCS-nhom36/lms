@@ -239,7 +239,7 @@ export default function Assignments() {
               <div className="flex items-center gap-3 text-[11px] text-gray-400 mb-3">
                 {a.dueDate && (
                   <span className="flex items-center gap-1">
-                    <Calendar size={11} /> {new Date(a.dueDate).toLocaleDateString()}
+                    <Calendar size={11} /> {new Date(a.dueDate).toLocaleString('vi-VN')}
                   </span>
                 )}
                 {a.timeLimitMins > 0 && (
