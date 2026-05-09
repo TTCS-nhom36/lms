@@ -1,23 +1,17 @@
 package com.ttcs.backend.entity;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-
-import com.ttcs.backend.listener.RagEntityListener;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,34 +26,37 @@ import org.hibernate.annotations.OnDeleteAction;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "chapters")
-@EntityListeners(RagEntityListener.class)
-public class Chapter {
+@Table(name = "uploaded_documents")
+public class UploadedDocument {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "course_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
-    private Course course;
+    private User uploadedBy;
 
-    @Column(name = "title", nullable = false, length = 255)
-    private String title;
+    @Column(name = "file_name", nullable = false)
+    private String fileName;
 
-    @Column(name = "order_index", nullable = false)
-    private Integer orderIndex;
+    @Column(name = "file_size")
+    private Long fileSize;
 
-    @Builder.Default
-    @OneToMany(mappedBy = "chapter", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Lesson> lessons = new ArrayList<>();
+    @Column(name = "page_count")
+    private Integer pageCount;
+
+    @Column(name = "chunk_count")
+    private Integer chunkCount;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
     }
 }
