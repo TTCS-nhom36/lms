@@ -23,6 +23,9 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 
+import com.ttcs.backend.listener.RagEntityListener;
+import jakarta.persistence.EntityListeners;
+
 @Getter
 @Setter
 @Builder
@@ -30,6 +33,7 @@ import org.hibernate.annotations.OnDeleteAction;
 @AllArgsConstructor
 @Entity
 @Table(name = "submissions")
+@EntityListeners(RagEntityListener.class)
 public class Submission {
 
     @Id
