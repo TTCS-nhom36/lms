@@ -42,6 +42,25 @@ spring:
       enabled: true
       max-file-size: 52MB
       max-request-size: 52MB
+
+  ai:
+    google:
+      genai:
+        api-key: AIzaSyBWSrmj25eyNsU0-SwQARtRIW2zidjZIxs
+        chat:
+          options:
+            model: gemini-3.1-flash-lite
+            temperature: 0.7
+        embedding:
+          options:
+            model: text-embedding-004
+    vectorstore:
+      qdrant:
+        host: localhost
+        port: 6334
+        collection-name: lms-documents
+        initialize-schema: true
+
 server:
   port: 8080
 
@@ -54,4 +73,3 @@ aws:
     secret-key: ${AWS_SECRET_ACCESS_KEY}
     region: ap-southeast-1
     bucket: lms-ttcs
-  

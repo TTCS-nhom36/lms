@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   Bell, LogOut, UserCircle2, ChevronDown, GraduationCap,
-  LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X, BarChart3,
+  LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X, BarChart3, FileText,
 } from 'lucide-react';
 
 /* ─── Menu definitions ─── */
@@ -12,6 +12,7 @@ const adminMenu = [
   { label: 'Analytics', icon: BarChart3, path: '/admin/analytics' },
   { label: 'Users', icon: User, path: '/admin/users' },
   { label: 'Courses', icon: BookOpen, path: '/admin/courses' },
+  { label: 'Chatbot', icon: FileText, path: '/admin/documents' },
 ];
 
 const instructorMenu = [

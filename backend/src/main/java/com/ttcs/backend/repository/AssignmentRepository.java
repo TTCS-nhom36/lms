@@ -15,4 +15,7 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
 	@Override
 	@EntityGraph(attributePaths = {"lesson", "course", "createdBy"})
 	Optional<Assignment> findById(Long id);
+
+	@EntityGraph(attributePaths = {"course"})
+	List<Assignment> findByCourseId(Long courseId);
 }

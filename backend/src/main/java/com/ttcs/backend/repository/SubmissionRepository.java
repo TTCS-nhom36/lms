@@ -22,6 +22,9 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
 	/** Tất cả submission của một học sinh cho một assignment */
 	List<Submission> findByUserIdAndAssignmentId(UUID userId, Long assignmentId);
 
+	@EntityGraph(attributePaths = {"assignment"})
+	List<Submission> findByUserId(UUID userId);
+
 	/** Submission có finalScore cao nhất (ưu tiên) hoặc autoScore cao nhất */
 	@Query("""
 		SELECT s FROM Submission s
