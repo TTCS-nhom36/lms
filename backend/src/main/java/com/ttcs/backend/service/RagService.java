@@ -182,7 +182,11 @@ public class RagService {
                         course.getDescription() != null ? course.getDescription() : "",
                         course.getStatus().name(),
                         course.getCreatedBy().getFullName()),
-                Map.of("courseId", course.getId().toString(), "type", "COURSE")));
+                Map.of(
+                        "courseId", course.getId().toString(), 
+                        "type", "COURSE",
+                        "createBy", course.getCreatedBy().getId().toString()
+                )));
     }
 
     private List<Document> createChapterDocuments(Chapter chapter) {
