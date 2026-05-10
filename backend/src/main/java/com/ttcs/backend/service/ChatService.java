@@ -13,10 +13,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -29,19 +26,25 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
-    private final RagService ragService;
+    private final ChatIntentParser chatIntentParser;
+    private final ChatBusinessService chatBusinessService;
+    private final ChatPromptBuilder chatPromptBuilder;
     private final ChatClient chatClient;
 
     public ChatService(
             ChatMessageRepository chatMessageRepository,
             UserRepository userRepository,
             CurrentUserService currentUserService,
-            RagService ragService,
+            ChatIntentParser chatIntentParser,
+            ChatBusinessService chatBusinessService,
+            ChatPromptBuilder chatPromptBuilder,
             ChatClient.Builder chatClientBuilder) {
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
         this.currentUserService = currentUserService;
-        this.ragService = ragService;
+        this.chatIntentParser = chatIntentParser;
+        this.chatBusinessService = chatBusinessService;
+        this.chatPromptBuilder = chatPromptBuilder;
         this.chatClient = chatClientBuilder.build();
     }
 
@@ -51,7 +54,6 @@ public class ChatService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-        // Save user message
         ChatMessage userMsg = ChatMessage.builder()
                 .user(user)
                 .role(MessageRole.USER)
@@ -59,19 +61,18 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(userMsg);
 
-        // Get recent history for context
         List<ChatMessage> recentMessages = chatMessageRepository
                 .findByUserOrderByCreatedAtDesc(user, PageRequest.of(0, 20));
         List<ChatMessage> chronological = new ArrayList<>(recentMessages.reversed());
 
-        // RAG: retrieve relevant context from vector store
-        String ragContext = ragService.buildContext(userMessage);
-        log.info("RAG retrieved {} chars of context", ragContext.length());
+        ChatIntentAnalysis intent = chatIntentParser.parse(userMessage);
+        log.info("Chat intent parsed: {}", intent.types());
 
-        // Build messages for Spring AI
-        List<Message> messages = buildMessages(user, ragContext, chronological);
+        ChatRelevantData relevantData = chatBusinessService.findRelevantData(user, intent, userMessage);
+        log.info("Relevant data retrieved: {} chars", relevantData.content().length());
 
-        // Call Gemini via Spring AI ChatClient
+        List<Message> messages = chatPromptBuilder.build(user, relevantData, chronological);
+
         String aiReply;
         try {
             aiReply = chatClient.prompt(new Prompt(messages))
@@ -82,7 +83,6 @@ public class ChatService {
             aiReply = "Xin lỗi, đã có lỗi xảy ra khi xử lý yêu cầu của bạn. Vui lòng thử lại sau.";
         }
 
-        // Save assistant message
         ChatMessage assistantMsg = ChatMessage.builder()
                 .user(user)
                 .role(MessageRole.ASSISTANT)
@@ -121,51 +121,5 @@ public class ChatService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         chatMessageRepository.deleteByUser(user);
-    }
-
-    // ───── Build Messages for Spring AI ─────
-
-    private List<Message> buildMessages(User user, String ragContext,
-                                         List<ChatMessage> history) {
-        List<Message> messages = new ArrayList<>();
-
-        // System prompt with RAG context
-        String systemPrompt = buildSystemPrompt(user, ragContext);
-        messages.add(new SystemMessage(systemPrompt));
-
-        // Chat history
-        for (ChatMessage msg : history) {
-            if (msg.getRole() == MessageRole.USER) {
-                messages.add(new UserMessage(msg.getContent()));
-            } else {
-                messages.add(new AssistantMessage(msg.getContent()));
-            }
-        }
-
-        return messages;
-    }
-
-    private String buildSystemPrompt(User user, String ragContext) {
-        return """
-                Bạn là trợ lý học tập AI của hệ thống LMS (Learning Management System).
-                Bạn có quyền truy cập DỮ LIỆU THỰC TẾ từ database, được cung cấp bên dưới thông qua hệ thống RAG (Retrieval Augmented Generation).
-                Hãy sử dụng dữ liệu này để trả lời chính xác.
-                Chỉ trả lời những thứ liên quan đến người hỏi, mọi thứ khác không được nhắc đến.
-                Nếu thông tin không có trong dữ liệu, hãy nói rõ điều đó.
-                Trả lời bằng tiếng Việt nếu người dùng hỏi bằng tiếng Việt.
-                Trả lời ngắn gọn, rõ ràng, thân thiện. Dùng markdown khi cần. Đặc biệt, khi liệt kê các mục (Ví dụ: Mô tả, Cấu trúc, Bài tập...), phải luôn xuống dòng và trình bày dưới dạng danh sách (bullet points) để dễ đọc.
-                
-                ══════ THÔNG TIN NGƯỜI DÙNG ══════
-                Tên: %s
-                Email: %s
-                Vai trò: %s
-                
-                %s
-                """.formatted(
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().name(),
-                ragContext
-        );
     }
 }

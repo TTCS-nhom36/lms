@@ -17,6 +17,7 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
@@ -57,6 +58,7 @@ public class RagService {
     public void indexAll() {
         log.info("=== Starting RAG indexing ===");
         try {
+            deleteByFilter("type != 'PDF_DOCUMENT'");
             List<Document> documents = new ArrayList<>();
 
             // 1. Courses
@@ -146,6 +148,7 @@ public class RagService {
             }
 
             if (!docs.isEmpty()) {
+                deleteExistingDocuments(clazz, id);
                 vectorStore.add(docs);
                 log.info("Indexed {} documents for {} id {}", docs.size(), clazz.getSimpleName(), id);
             }
@@ -161,13 +164,36 @@ public class RagService {
         Long id = event.entityId();
         try {
             log.info("RAG delete triggered for {} with id {}", clazz.getSimpleName(), id);
-            String prefix = clazz.getSimpleName().toLowerCase() + "-";
-            String docId = prefix + id;
-            String uuid = java.util.UUID.nameUUIDFromBytes(docId.getBytes()).toString();
-            vectorStore.delete(List.of(uuid));
-            log.info("Deleted document from vector store: {}", docId);
+            deleteExistingDocuments(clazz, id);
+            log.info("Deleted documents from vector store for {} id {}", clazz.getSimpleName(), id);
         } catch (Exception e) {
             log.error("Failed to delete RAG doc for {} id {}", clazz.getSimpleName(), id, e);
+        }
+    }
+
+    private void deleteExistingDocuments(Class<?> clazz, Long id) {
+        if (clazz.equals(Course.class)) {
+            deleteByFilter("courseId == '" + id + "'");
+        } else if (clazz.equals(Chapter.class)) {
+            deleteByFilter("chapterId == '" + id + "'");
+        } else if (clazz.equals(Lesson.class)) {
+            deleteByFilter("lessonId == '" + id + "'");
+        } else if (clazz.equals(Assignment.class)) {
+            deleteByFilter("assignmentId == '" + id + "'");
+        } else if (clazz.equals(Question.class)) {
+            deleteByFilter("questionId == '" + id + "'");
+        } else if (clazz.equals(Submission.class)) {
+            deleteByFilter("submissionId == '" + id + "'");
+        } else if (clazz.equals(Enrollment.class)) {
+            deleteByFilter("enrollmentId == '" + id + "'");
+        }
+    }
+
+    private void deleteByFilter(String filterExpression) {
+        try {
+            vectorStore.delete(new FilterExpressionTextParser().parse(filterExpression));
+        } catch (Exception e) {
+            log.warn("Failed to delete vector documents with filter [{}]: {}", filterExpression, e.getMessage());
         }
     }
 
@@ -185,7 +211,8 @@ public class RagService {
                 Map.of(
                         "courseId", course.getId().toString(), 
                         "type", "COURSE",
-                        "createBy", course.getCreatedBy().getId().toString()
+                        "visibility", "COURSE",
+                        "createdBy", course.getCreatedBy().getId().toString()
                 )));
     }
 
@@ -198,6 +225,7 @@ public class RagService {
                         chapter.getCourse().getTitle(), chapter.getOrderIndex(), chapter.getTitle()),
                 Map.of("courseId", chapter.getCourse().getId().toString(),
                         "chapterId", chapter.getId().toString(),
+                        "visibility", "COURSE",
                         "type", "CHAPTER")));
     }
 
@@ -220,6 +248,7 @@ public class RagService {
                         lessonContent + "\nNội dung:\n" + chunks.get(i),
                         Map.of("courseId", course.getId().toString(),
                                 "lessonId", lesson.getId().toString(),
+                                "visibility", "COURSE",
                                 "type", "LESSON_CONTENT",
                                 "chunk", String.valueOf(i))));
             }
@@ -230,6 +259,7 @@ public class RagService {
                     lessonContent,
                     Map.of("courseId", course.getId().toString(),
                             "lessonId", lesson.getId().toString(),
+                            "visibility", "COURSE",
                             "type", "LESSON")));
         }
         return documents;
@@ -255,6 +285,7 @@ public class RagService {
                 assignmentText,
                 Map.of("courseId", course.getId().toString(),
                         "assignmentId", assignment.getId().toString(),
+                        "visibility", "COURSE",
                         "type", "ASSIGNMENT")));
     }
 
@@ -278,6 +309,7 @@ public class RagService {
                 Map.of("courseId", course.getId().toString(),
                         "assignmentId", assignment.getId().toString(),
                         "questionId", q.getId().toString(),
+                        "visibility", "COURSE",
                         "type", "QUIZ_QUESTION")));
     }
 
@@ -301,7 +333,9 @@ public class RagService {
                 subText,
                 Map.of("courseId", course.getId().toString(),
                         "assignmentId", assignment.getId().toString(),
+                        "submissionId", sub.getId().toString(),
                         "userId", sub.getUser().getId().toString(),
+                        "visibility", "USER",
                         "type", "SUBMISSION")));
     }
 
@@ -315,7 +349,9 @@ public class RagService {
                         enrollment.getCourse().getTitle(),
                         enrollment.getStatus().name()),
                 Map.of("courseId", enrollment.getCourse().getId().toString(),
+                        "enrollmentId", enrollment.getId().toString(),
                         "userId", enrollment.getUser().getId().toString(),
+                        "visibility", "USER",
                         "type", "ENROLLMENT")));
     }
 
@@ -323,18 +359,35 @@ public class RagService {
      * Search for relevant documents given a query.
      */
     public List<Document> search(String query, int topK) {
+        return search(query, topK, null);
+    }
+
+    /**
+     * Search for relevant documents with metadata filters.
+     */
+    public List<Document> search(String query, int topK, String filterExpression) {
+        SearchRequest.Builder builder = SearchRequest.builder()
+                .query(query)
+                .topK(topK);
+        if (filterExpression != null && !filterExpression.isBlank()) {
+            builder.filterExpression(filterExpression);
+        }
         return vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(query)
-                        .topK(topK)
-                        .build());
+                builder.build());
     }
 
     /**
      * Build a context string from search results.
      */
     public String buildContext(String query) {
-        List<Document> results = search(query, 10);
+        return buildContext(query, null);
+    }
+
+    /**
+     * Build a context string from filtered search results.
+     */
+    public String buildContext(String query, String filterExpression) {
+        List<Document> results = search(query, 10, filterExpression);
         if (results.isEmpty()) {
             return "Không tìm thấy thông tin liên quan trong cơ sở dữ liệu.";
         }
@@ -395,6 +448,8 @@ public class RagService {
                     Map.of("type", "PDF_DOCUMENT",
                             "fileName", fileName,
                             "chunk", String.valueOf(i),
+                            "visibility", "USER",
+                            "uploadedByUserId", user.getId().toString(),
                             "uploadedBy", user.getFullName())));
         }
 
