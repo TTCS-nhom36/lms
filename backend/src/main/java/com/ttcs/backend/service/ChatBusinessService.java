@@ -14,6 +14,7 @@ import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.LessonProgressRepository;
 import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
+import java.text.Normalizer;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
@@ -291,7 +292,15 @@ public class ChatBusinessService {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT).trim();
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.toLowerCase(Locale.ROOT).trim();
+        String decomposed = Normalizer.normalize(normalized, Normalizer.Form.NFD);
+        return decomposed.replaceAll("\\p{M}", "")
+                .replace('đ', 'd')
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private String blankToDash(String value) {

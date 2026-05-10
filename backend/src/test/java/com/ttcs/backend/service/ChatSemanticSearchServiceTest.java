@@ -53,6 +53,7 @@ class ChatSemanticSearchServiceTest {
         String filter = service.buildVisibilityFilter(instructor);
 
         assertTrue(filter.contains("courseId == '12'"));
+        assertTrue(filter.contains("visibility == 'INSTRUCTOR'"));
         assertTrue(filter.contains("uploadedByUserId == '" + instructor.getId() + "'"));
         assertTrue(!filter.contains("courseId == '99'"));
     }
@@ -75,6 +76,7 @@ class ChatSemanticSearchServiceTest {
         assertTrue(filter.contains("courseId == '7'"));
         assertTrue(filter.contains("userId == '" + student.getId() + "'"));
         assertTrue(filter.contains("uploadedByUserId == '" + student.getId() + "'"));
+        assertTrue(!filter.contains("visibility == 'INSTRUCTOR'"));
     }
 
     @Test
