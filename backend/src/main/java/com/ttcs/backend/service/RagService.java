@@ -38,7 +38,6 @@ public class RagService {
     private final ChapterRepository chapterRepository;
     private final LessonRepository lessonRepository;
     private final AssignmentRepository assignmentRepository;
-    private final QuestionRepository questionRepository;
     private final SubmissionRepository submissionRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final UploadedDocumentRepository uploadedDocumentRepository;
@@ -77,19 +76,10 @@ public class RagService {
                     }
                 }
 
-                // 3. Assignments & Quiz Questions
+                // 3. Assignments
                 List<Assignment> assignments = assignmentRepository.findByCourseId(course.getId());
                 for (Assignment assignment : assignments) {
                     documents.addAll(createAssignmentDocuments(assignment));
-
-                    // Quiz questions with answers
-                    if (assignment.getType().name().equals("QUIZ")) {
-                        List<Question> questions = questionRepository
-                                .findByAssignmentId(assignment.getId());
-                        for (Question q : questions) {
-                            documents.addAll(createQuestionDocuments(q));
-                        }
-                    }
 
                     // Submissions with scores
                     for (Submission sub : assignment.getSubmissions()) {
@@ -140,7 +130,9 @@ public class RagService {
             } else if (clazz.equals(Assignment.class)) {
                 assignmentRepository.findById(id).ifPresent(a -> docs.addAll(createAssignmentDocuments(a)));
             } else if (clazz.equals(Question.class)) {
-                questionRepository.findById(id).ifPresent(q -> docs.addAll(createQuestionDocuments(q)));
+                deleteExistingDocumentsForRemoval(clazz, id);
+                log.info("Deleted legacy question documents from vector store for Question id {}", id);
+                return;
             } else if (clazz.equals(Submission.class)) {
                 submissionRepository.findById(id).ifPresent(s -> docs.addAll(createSubmissionDocuments(s)));
             } else if (clazz.equals(Enrollment.class)) {
@@ -148,7 +140,7 @@ public class RagService {
             }
 
             if (!docs.isEmpty()) {
-                deleteExistingDocuments(clazz, id);
+                deleteExistingDocumentsForSync(clazz, id);
                 vectorStore.add(docs);
                 log.info("Indexed {} documents for {} id {}", docs.size(), clazz.getSimpleName(), id);
             }
@@ -164,14 +156,32 @@ public class RagService {
         Long id = event.entityId();
         try {
             log.info("RAG delete triggered for {} with id {}", clazz.getSimpleName(), id);
-            deleteExistingDocuments(clazz, id);
+            deleteExistingDocumentsForRemoval(clazz, id);
             log.info("Deleted documents from vector store for {} id {}", clazz.getSimpleName(), id);
         } catch (Exception e) {
             log.error("Failed to delete RAG doc for {} id {}", clazz.getSimpleName(), id, e);
         }
     }
 
-    private void deleteExistingDocuments(Class<?> clazz, Long id) {
+    private void deleteExistingDocumentsForSync(Class<?> clazz, Long id) {
+        if (clazz.equals(Course.class)) {
+            deleteByFilter("courseId == '" + id + "' && docType == 'COURSE'");
+        } else if (clazz.equals(Chapter.class)) {
+            deleteByFilter("chapterId == '" + id + "' && docType == 'CHAPTER'");
+        } else if (clazz.equals(Lesson.class)) {
+            deleteByFilter("lessonId == '" + id + "' && (docType == 'LESSON' || docType == 'LESSON_CONTENT')");
+        } else if (clazz.equals(Assignment.class)) {
+            deleteByFilter("assignmentId == '" + id + "' && docType == 'ASSIGNMENT'");
+        } else if (clazz.equals(Question.class)) {
+            deleteByFilter("questionId == '" + id + "' && docType == 'QUIZ_QUESTION'");
+        } else if (clazz.equals(Submission.class)) {
+            deleteByFilter("submissionId == '" + id + "' && docType == 'SUBMISSION'");
+        } else if (clazz.equals(Enrollment.class)) {
+            deleteByFilter("enrollmentId == '" + id + "' && docType == 'ENROLLMENT'");
+        }
+    }
+
+    private void deleteExistingDocumentsForRemoval(Class<?> clazz, Long id) {
         if (clazz.equals(Course.class)) {
             deleteByFilter("courseId == '" + id + "'");
         } else if (clazz.equals(Chapter.class)) {
@@ -211,6 +221,9 @@ public class RagService {
                 Map.of(
                         "courseId", course.getId().toString(), 
                         "type", "COURSE",
+                        "sourceEntity", "Course",
+                        "sourceEntityId", course.getId().toString(),
+                        "sensitive", "false",
                         "visibility", "COURSE",
                         "createdBy", course.getCreatedBy().getId().toString()
                 )));
@@ -225,7 +238,10 @@ public class RagService {
                         chapter.getCourse().getTitle(), chapter.getOrderIndex(), chapter.getTitle()),
                 Map.of("courseId", chapter.getCourse().getId().toString(),
                         "chapterId", chapter.getId().toString(),
-                "createdBy", chapter.getCourse().getCreatedBy().getId().toString(),
+                        "createdBy", chapter.getCourse().getCreatedBy().getId().toString(),
+                        "sourceEntity", "Chapter",
+                        "sourceEntityId", chapter.getId().toString(),
+                        "sensitive", "false",
                         "visibility", "COURSE",
                         "type", "CHAPTER")));
     }
@@ -250,6 +266,9 @@ public class RagService {
                         Map.of("courseId", course.getId().toString(),
                                 "lessonId", lesson.getId().toString(),
                                 "createdBy", course.getCreatedBy().getId().toString(),
+                                "sourceEntity", "Lesson",
+                                "sourceEntityId", lesson.getId().toString(),
+                                "sensitive", "false",
                                 "visibility", "COURSE",
                                 "type", "LESSON_CONTENT",
                                 "chunk", String.valueOf(i))));
@@ -262,6 +281,9 @@ public class RagService {
                     Map.of("courseId", course.getId().toString(),
                             "lessonId", lesson.getId().toString(),
                             "createdBy", course.getCreatedBy().getId().toString(),
+                            "sourceEntity", "Lesson",
+                            "sourceEntityId", lesson.getId().toString(),
+                            "sensitive", "false",
                             "visibility", "COURSE",
                             "type", "LESSON")));
         }
@@ -288,34 +310,12 @@ public class RagService {
                 assignmentText,
                 Map.of("courseId", course.getId().toString(),
                         "assignmentId", assignment.getId().toString(),
-                "createdBy", course.getCreatedBy().getId().toString(),
+                        "createdBy", course.getCreatedBy().getId().toString(),
+                        "sourceEntity", "Assignment",
+                        "sourceEntityId", assignment.getId().toString(),
+                        "sensitive", "false",
                         "visibility", "COURSE",
                         "type", "ASSIGNMENT")));
-    }
-
-    private List<Document> createQuestionDocuments(Question q) {
-        if (q.getAssignment() == null || q.getAssignment().getCourse() == null) return List.of();
-        Course course = q.getAssignment().getCourse();
-        Assignment assignment = q.getAssignment();
-        StringBuilder qText = new StringBuilder();
-        qText.append(String.format(
-                "Khóa học: %s\nQuiz: %s\nCâu hỏi %d: %s\nLoại: %s\nĐáp án:\n",
-                course.getTitle(), assignment.getTitle(),
-                q.getOrderIndex(), q.getContent(), q.getType().name()));
-        for (QuestionOption opt : q.getOptions()) {
-            qText.append(opt.getIsCorrect() ? "  ✓ " : "  ○ ");
-            qText.append(opt.getContent()).append("\n");
-        }
-        return List.of(createDocument(
-                "question-" + q.getId(),
-                "QUIZ_QUESTION",
-                qText.toString(),
-                Map.of("courseId", course.getId().toString(),
-                        "assignmentId", assignment.getId().toString(),
-                        "questionId", q.getId().toString(),
-                "createdBy", course.getCreatedBy().getId().toString(),
-                        "visibility", "COURSE",
-                        "type", "QUIZ_QUESTION")));
     }
 
     private List<Document> createSubmissionDocuments(Submission sub) {
@@ -340,6 +340,10 @@ public class RagService {
                         "assignmentId", assignment.getId().toString(),
                         "submissionId", sub.getId().toString(),
                         "userId", sub.getUser().getId().toString(),
+                        "ownerUserId", sub.getUser().getId().toString(),
+                        "sourceEntity", "Submission",
+                        "sourceEntityId", sub.getId().toString(),
+                        "sensitive", "true",
                         "visibility", "USER",
                         "type", "SUBMISSION")));
     }
@@ -356,6 +360,10 @@ public class RagService {
                 Map.of("courseId", enrollment.getCourse().getId().toString(),
                         "enrollmentId", enrollment.getId().toString(),
                         "userId", enrollment.getUser().getId().toString(),
+                        "ownerUserId", enrollment.getUser().getId().toString(),
+                        "sourceEntity", "Enrollment",
+                        "sourceEntityId", enrollment.getId().toString(),
+                        "sensitive", "true",
                         "visibility", "USER",
                         "type", "ENROLLMENT")));
     }
@@ -402,7 +410,7 @@ public class RagService {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("══════ DỮ LIỆU TỪ HỆ THỐNG LMS (").append(results.size()).append(" kết quả) ══════\n\n");
+        sb.append("====== DỮ LIỆU TỪ HỆ THỐNG LMS (").append(results.size()).append(" kết quả) ======\n\n");
         for (int i = 0; i < results.size(); i++) {
             Document doc = results.get(i);
             String type = doc.getMetadata().getOrDefault("type", "UNKNOWN").toString();
@@ -412,7 +420,7 @@ public class RagService {
         return sb.toString();
     }
 
-    // ───── PDF Upload & Index ─────
+    // PDF Upload & Index
 
     /**
      * Upload a PDF, extract text, chunk it, and index into the vector store.
@@ -454,12 +462,18 @@ public class RagService {
                     docIdBase + "-chunk-" + i,
                     "PDF_DOCUMENT",
                     content,
-                    Map.of("type", "PDF_DOCUMENT",
-                            "fileName", fileName,
-                            "chunk", String.valueOf(i),
-                            "visibility", "USER",
-                            "uploadedByUserId", user.getId().toString(),
-                            "uploadedBy", user.getFullName())));
+                    Map.ofEntries(
+                            Map.entry("type", "PDF_DOCUMENT"),
+                            Map.entry("fileName", fileName),
+                            Map.entry("chunk", String.valueOf(i)),
+                            Map.entry("userId", user.getId().toString()),
+                            Map.entry("ownerUserId", user.getId().toString()),
+                            Map.entry("sourceEntity", "UploadedDocument"),
+                            Map.entry("sourceEntityId", docIdBase),
+                            Map.entry("sensitive", "true"),
+                            Map.entry("visibility", "USER"),
+                            Map.entry("uploadedByUserId", user.getId().toString()),
+                            Map.entry("uploadedBy", user.getFullName()))));
         }
 
         // Batch add to vector store
@@ -470,7 +484,7 @@ public class RagService {
             vectorStore.add(batch);
         }
 
-        log.info("PDF indexed: {} → {} chunks", fileName, chunks.size());
+        log.info("PDF indexed: {} -> {} chunks", fileName, chunks.size());
 
         // Save metadata
         UploadedDocument doc = UploadedDocument.builder()
@@ -511,12 +525,16 @@ public class RagService {
                 .toList();
     }
 
-    // ───── Helpers ─────
+    // Helpers
 
     private Document createDocument(String id, String type, String content,
             Map<String, Object> extraMetadata) {
         Map<String, Object> metadata = new HashMap<>(extraMetadata);
+        metadata.putIfAbsent("type", type);
         metadata.put("docType", type);
+        metadata.putIfAbsent("sourceEntity", type);
+        metadata.putIfAbsent("sourceEntityId", id);
+        metadata.putIfAbsent("sensitive", "false");
         String uuid = java.util.UUID.nameUUIDFromBytes(id.getBytes()).toString();
         return new Document(uuid, content, metadata);
     }

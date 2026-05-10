@@ -49,6 +49,7 @@ public class ChatSemanticSearchService {
                     .toList();
             return joinOr(List.of(
                     and(eq("visibility", "COURSE"), inCourseIds(courseIds)),
+                    and(eq("visibility", "INSTRUCTOR"), inCourseIds(courseIds)),
                     and(eq("visibility", "USER"), inCourseIds(courseIds)),
                     eq("uploadedByUserId", user.getId().toString())));
         }
@@ -141,6 +142,11 @@ public class ChatSemanticSearchService {
                     && (!courseId.isEmpty() && courseIds.contains(courseId));
         }
 
+        if ("INSTRUCTOR".equals(visibility)) {
+            return (!createdBy.isEmpty() && createdBy.equals(userId))
+                    && (!courseId.isEmpty() && courseIds.contains(courseId));
+        }
+
         if ("USER".equals(visibility)) {
             return !courseId.isEmpty() && courseIds.contains(courseId);
         }
@@ -152,6 +158,7 @@ public class ChatSemanticSearchService {
         String visibility = metadataValue(doc, "visibility");
         String courseId = metadataValue(doc, "courseId");
         String docUserId = metadataValue(doc, "userId");
+        String ownerUserId = metadataValue(doc, "ownerUserId");
         String uploadedByUserId = metadataValue(doc, "uploadedByUserId");
 
         if (!uploadedByUserId.isEmpty() && uploadedByUserId.equals(userId)) {
@@ -163,7 +170,8 @@ public class ChatSemanticSearchService {
         }
 
         if ("USER".equals(visibility)) {
-            return !docUserId.isEmpty() && docUserId.equals(userId);
+            return (!ownerUserId.isEmpty() && ownerUserId.equals(userId))
+                    || (!docUserId.isEmpty() && docUserId.equals(userId));
         }
 
         return false;
