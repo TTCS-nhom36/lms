@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -24,6 +24,12 @@ export default function CourseEditor() {
   const toast = useToast();
   const { user } = useAuth();
   const isNew = !id || id === 'new';
+
+  // Stable refs to avoid re-creating callbacks when toast/navigate change identity
+  const toastRef = useRef(toast);
+  const navigateRef = useRef(navigate);
+  useEffect(() => { toastRef.current = toast; }, [toast]);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -97,6 +103,7 @@ export default function CourseEditor() {
     shuffleQuestions: false, shuffleOptions: false,
   });
   const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [showQuestionFormModal, setShowQuestionFormModal] = useState(false);
   const [questionAssignment, setQuestionAssignment] = useState(null);
   const [questionAssignmentDetails, setQuestionAssignmentDetails] = useState(null);
   const [questionLoading, setQuestionLoading] = useState(false);
@@ -143,12 +150,12 @@ export default function CourseEditor() {
       loadGradebook(id);
     } catch (error) {
       console.error('Failed to load course:', error);
-      toast.error('Failed to load course');
-      setTimeout(() => navigate('/admin/courses'), 1500);
+      toastRef.current.error('Failed to load course');
+      setTimeout(() => navigateRef.current('/admin/courses'), 1500);
     } finally {
       setLoading(false);
     }
-  }, [id, toast, navigate]);
+  }, [id]);
 
   // Load chapters for the course
   const loadChapters = useCallback(async (courseId) => {
@@ -648,6 +655,7 @@ export default function CourseEditor() {
       });
       const newQuestion = res.data;
       toast.success('Question added');
+      setShowQuestionFormModal(false);
       setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: (questionAssignmentDetails?.questions?.length || 0) + 2, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] });
       if (questionAssignmentDetails) {
         setQuestionAssignmentDetails({
@@ -678,6 +686,7 @@ export default function CourseEditor() {
       const updated = res.data;
       toast.success('Question updated');
       setEditingQuestion(null);
+      setShowQuestionFormModal(false);
       setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] });
       if (questionAssignmentDetails) {
         setQuestionAssignmentDetails({
@@ -1648,155 +1657,153 @@ export default function CourseEditor() {
             <LoadingSpinner text="Loading questions..." />
           ) : (
             <>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="body-emphasis text-[#1d1d1f]">{editingQuestion ? '✏️ Edit Question' : '+ Add Question'}</h4>
-                  {editingQuestion && (
-                    <button onClick={() => { setEditingQuestion(null); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); }} className="text-[11px] text-[#86868b] hover:text-[#1d1d1f] border border-[#d2d2d7] px-2 py-1 rounded-lg transition-colors">
-                      Cancel Edit
-                    </button>
-                  )}
-                </div>
-                <div><label className="control-label block mb-2 text-[#6e6e73]">Question Content *</label><textarea rows={3} value={questionForm.content} onChange={(e) => setQuestionForm({ ...questionForm, content: e.target.value })} placeholder="Write the question content here..." /></div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="control-label block mb-2 text-[#6e6e73]">Type</label>
-                    <select value={questionForm.type} onChange={(e) => {
-                      const newType = e.target.value;
-                      let newOptions = [...(questionForm.options || [])];
-                      if (newType === 'TRUE_FALSE') {
-                        newOptions = [{ content: 'True', isCorrect: true }, { content: 'False', isCorrect: false }];
-                      } else if (questionForm.type === 'TRUE_FALSE') {
-                        newOptions = [{ content: '', isCorrect: false }, { content: '', isCorrect: false }];
-                      } else if (newType === 'SINGLE_CHOICE') {
-                        const hasCorrect = newOptions.findIndex(o => o.isCorrect);
-                        newOptions = newOptions.map((o, i) => ({ ...o, isCorrect: i === hasCorrect }));
-                      }
-                      setQuestionForm({ ...questionForm, type: newType, options: newOptions });
-                    }}>
-                      <option value="SINGLE_CHOICE">Single Choice</option><option value="MULTIPLE_CHOICE">Multiple Choice</option><option value="TRUE_FALSE">True / False</option>
-                    </select>
-                  </div>
-                  <div><label className="control-label block mb-2 text-[#6e6e73]">Score</label><input type="number" min="0" value={questionForm.score} onChange={(e) => setQuestionForm({ ...questionForm, score: e.target.value })} /></div>
-                  <div><label className="control-label block mb-2 text-[#6e6e73]">Order</label><input type="number" min="1" value={questionForm.orderIndex} onChange={(e) => setQuestionForm({ ...questionForm, orderIndex: e.target.value })} /></div>
-                </div>
-                {/* Options Section */}
-                <div className="pt-3 border-t border-[#f5f5f7]">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="control-label text-[#6e6e73]">Answers / Options *</label>
-                    {questionForm.type !== 'TRUE_FALSE' && (
-                      <button onClick={() => setQuestionForm({ ...questionForm, options: [...(questionForm.options || []), { content: '', isCorrect: false }] })} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
-                        <Plus size={12} className="inline mr-1" />Add Option
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {(questionForm.options || []).map((opt, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <input
-                          type={questionForm.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'}
-                          name="correctOption"
-                          checked={opt.isCorrect}
-                          onChange={() => {
-                            const newOptions = [...questionForm.options];
-                            if (questionForm.type === 'MULTIPLE_CHOICE') {
-                              newOptions[index] = { ...newOptions[index], isCorrect: !newOptions[index].isCorrect };
-                            } else {
-                              newOptions.forEach((o, i) => newOptions[i] = { ...o, isCorrect: i === index });
-                            }
-                            setQuestionForm({ ...questionForm, options: newOptions });
-                          }}
-                          className="w-4 h-4 accent-[#0071e3]"
-                        />
-                        <input
-                          type="text"
-                          value={opt.content}
-                          disabled={questionForm.type === 'TRUE_FALSE'}
-                          onChange={(e) => {
-                            const newOptions = [...questionForm.options];
-                            newOptions[index] = { ...newOptions[index], content: e.target.value };
-                            setQuestionForm({ ...questionForm, options: newOptions });
-                          }}
-                          className={`flex-1 text-sm py-1.5 ${opt.isCorrect ? 'border-[#0071e3] bg-[#0071e3]/5' : ''}`}
-                          placeholder={`Option ${index + 1}`}
-                        />
-                        {questionForm.type !== 'TRUE_FALSE' && questionForm.options.length > 2 && (
-                          <button onClick={() => {
-                            const newOptions = questionForm.options.filter((_, i) => i !== index);
-                            setQuestionForm({ ...questionForm, options: newOptions });
-                          }} className="text-[#ff3b30] p-1.5 hover:bg-[#ff3b30]/10 rounded">
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex justify-end gap-3 pt-3 border-t border-[#f5f5f7]">
-                  <button onClick={() => { setShowQuestionModal(false); setEditingQuestion(null); }} className="btn-secondary !text-[#1d1d1f]">Close</button>
-                  {editingQuestion ? (
-                    <button onClick={handleUpdateQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50">
-                      {questionSaving ? 'Saving...' : 'Save Changes'}
-                    </button>
-                  ) : (
-                    <button onClick={handleAddQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50"><Plus size={14} className="inline-block mr-1" /> {questionSaving ? 'Adding...' : 'Add Question'}</button>
-                  )}
-                </div>
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="body-emphasis text-[#1d1d1f]">Existing Questions ({questionAssignmentDetails?.questions?.length || 0})</h4>
+                <button onClick={() => { setEditingQuestion(null); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: (questionAssignmentDetails?.questions?.length || 0) + 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); setShowQuestionFormModal(true); }} className="btn-primary"><Plus size={14} className="inline-block mr-1" /> Add Question</button>
               </div>
-              <div className="pt-4 border-t border-[#f5f5f7]">
-                <h4 className="body-emphasis text-[#1d1d1f] mb-3">Existing Questions ({questionAssignmentDetails?.questions?.length || 0})</h4>
-                {questionAssignmentDetails?.questions?.length ? (
-                  <div className="space-y-3">
-                    {questionAssignmentDetails.questions.map((q, idx) => (
-                      <div key={q.id || idx} className={`p-3 rounded-lg border transition-colors ${editingQuestion?.id === q.id ? 'bg-[#0071e3]/5 border-[#0071e3]/30' : 'bg-[#f5f5f7] border-transparent'}`}>
-                        <div className="flex items-center justify-between mb-2 text-[11px] text-[#86868b]">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-[#1d1d1f]">Q{idx + 1}.</span>
-                            <span className="px-1.5 py-0.5 rounded bg-white border border-[#d2d2d7]">{q.type}</span>
-                            <span>Score: {q.score ?? '—'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingQuestion(q);
-                                setQuestionForm({
-                                  content: q.content || '',
-                                  type: q.type || 'SINGLE_CHOICE',
-                                  orderIndex: q.orderIndex || idx + 1,
-                                  score: q.score || 1,
-                                  options: q.options?.map(o => ({ content: o.content, isCorrect: o.isCorrect || false })) || [{ content: '', isCorrect: false }, { content: '', isCorrect: false }]
-                                });
-                              }}
-                              className="text-[#0071e3] hover:bg-[#0071e3]/10 p-1 rounded transition-colors" title="Edit Question"
-                            >
-                              <Edit size={12} />
-                            </button>
-                            <button onClick={() => handleDeleteQuestion(q.id)} className="text-[#86868b] hover:text-[#ff3b30] p-1 rounded transition-colors" title="Delete Question">
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
+              {questionAssignmentDetails?.questions?.length ? (
+                <div className="space-y-3">
+                  {questionAssignmentDetails.questions.map((q, idx) => (
+                    <div key={q.id || idx} className={`p-3 rounded-lg border transition-colors ${editingQuestion?.id === q.id ? 'bg-[#0071e3]/5 border-[#0071e3]/30' : 'bg-[#f5f5f7] border-transparent'}`}>
+                      <div className="flex items-center justify-between mb-2 text-[11px] text-[#86868b]">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-[#1d1d1f]">Q{idx + 1}.</span>
+                          <span className="px-1.5 py-0.5 rounded bg-white border border-[#d2d2d7]">{q.type}</span>
+                          <span>Score: {q.score ?? '—'}</span>
                         </div>
-                        <p className="body-primary text-[#1d1d1f] mb-2">{q.content || 'No content'}</p>
-                        {q.options && q.options.length > 0 && (
-                          <div className="space-y-1 pl-2 border-l-2 border-[#d2d2d7]">
-                            {q.options.map((opt, oi) => (
-                              <div key={opt.id || oi} className={`flex items-center gap-2 text-[12px] px-2 py-1 rounded ${opt.isCorrect ? 'bg-[#34c759]/10 text-[#1a7a34] font-medium' : 'text-[#6e6e73]'}`}>
-                                <span className={`w-3 h-3 rounded-full flex-shrink-0 ${opt.isCorrect ? 'bg-[#34c759]' : 'bg-[#d2d2d7]'}`}></span>
-                                {opt.content}
-                                {opt.isCorrect && <span className="ml-auto text-[10px] font-semibold text-[#34c759]">✓ Correct</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingQuestion(q);
+                              setQuestionForm({
+                                content: q.content || '',
+                                type: q.type || 'SINGLE_CHOICE',
+                                orderIndex: q.orderIndex || idx + 1,
+                                score: q.score || 1,
+                                options: q.options?.map(o => ({ content: o.content, isCorrect: o.isCorrect || false })) || [{ content: '', isCorrect: false }, { content: '', isCorrect: false }]
+                              });
+                              setShowQuestionFormModal(true);
+                            }}
+                            className="text-[#0071e3] hover:bg-[#0071e3]/10 p-1 rounded transition-colors" title="Edit Question"
+                          >
+                            <Edit size={12} />
+                          </button>
+                          <button onClick={() => handleDeleteQuestion(q.id)} className="text-[#86868b] hover:text-[#ff3b30] p-1 rounded transition-colors" title="Delete Question">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="micro-ui text-[#86868b]">No questions yet. Add one above.</p>
-                )}
-              </div>
+                      <p className="body-primary text-[#1d1d1f] mb-2">{q.content || 'No content'}</p>
+                      {q.options && q.options.length > 0 && (
+                        <div className="space-y-1 pl-2 border-l-2 border-[#d2d2d7]">
+                          {q.options.map((opt, oi) => (
+                            <div key={opt.id || oi} className={`flex items-center gap-2 text-[12px] px-2 py-1 rounded ${opt.isCorrect ? 'bg-[#34c759]/10 text-[#1a7a34] font-medium' : 'text-[#6e6e73]'}`}>
+                              <span className={`w-3 h-3 rounded-full flex-shrink-0 ${opt.isCorrect ? 'bg-[#34c759]' : 'bg-[#d2d2d7]'}`}></span>
+                              {opt.content}
+                              {opt.isCorrect && <span className="ml-auto text-[10px] font-semibold text-[#34c759]">✓ Correct</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="micro-ui text-[#86868b]">No questions yet. Add one above.</p>
+              )}
             </>
           )}
+        </div>
+      </Modal>
+
+      {/* Question Form Modal */}
+      <Modal isOpen={showQuestionFormModal} onClose={() => { setShowQuestionFormModal(false); setEditingQuestion(null); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); }} title={editingQuestion ? 'Edit Question' : '+ Add Question'} size="md">
+        <div className="space-y-4">
+          <div><label className="control-label block mb-2 text-[#6e6e73]">Question Content *</label><textarea rows={3} value={questionForm.content} onChange={(e) => setQuestionForm({ ...questionForm, content: e.target.value })} placeholder="Write the question content here..." /></div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="control-label block mb-2 text-[#6e6e73]">Type</label>
+              <select value={questionForm.type} onChange={(e) => {
+                const newType = e.target.value;
+                let newOptions = [...(questionForm.options || [])];
+                if (newType === 'TRUE_FALSE') {
+                  newOptions = [{ content: 'True', isCorrect: true }, { content: 'False', isCorrect: false }];
+                } else if (questionForm.type === 'TRUE_FALSE') {
+                  newOptions = [{ content: '', isCorrect: false }, { content: '', isCorrect: false }];
+                } else if (newType === 'SINGLE_CHOICE') {
+                  const hasCorrect = newOptions.findIndex(o => o.isCorrect);
+                  newOptions = newOptions.map((o, i) => ({ ...o, isCorrect: i === hasCorrect }));
+                }
+                setQuestionForm({ ...questionForm, type: newType, options: newOptions });
+              }}>
+                <option value="SINGLE_CHOICE">Single Choice</option><option value="MULTIPLE_CHOICE">Multiple Choice</option><option value="TRUE_FALSE">True / False</option>
+              </select>
+            </div>
+            <div><label className="control-label block mb-2 text-[#6e6e73]">Score</label><input type="number" min="0" value={questionForm.score} onChange={(e) => setQuestionForm({ ...questionForm, score: e.target.value })} /></div>
+            <div><label className="control-label block mb-2 text-[#6e6e73]">Order</label><input type="number" min="1" value={questionForm.orderIndex} onChange={(e) => setQuestionForm({ ...questionForm, orderIndex: e.target.value })} /></div>
+          </div>
+          {/* Options Section */}
+          <div className="pt-3 border-t border-[#f5f5f7]">
+            <div className="flex justify-between items-center mb-2">
+              <label className="control-label text-[#6e6e73]">Answers / Options *</label>
+              {questionForm.type !== 'TRUE_FALSE' && (
+                <button onClick={() => setQuestionForm({ ...questionForm, options: [...(questionForm.options || []), { content: '', isCorrect: false }] })} className="text-[#0071e3] text-[11px] font-semibold hover:bg-[#0071e3]/10 px-2 py-1 rounded">
+                  <Plus size={12} className="inline mr-1" />Add Option
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {(questionForm.options || []).map((opt, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    type={questionForm.type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'}
+                    name="correctOption"
+                    checked={opt.isCorrect}
+                    onChange={() => {
+                      const newOptions = [...questionForm.options];
+                      if (questionForm.type === 'MULTIPLE_CHOICE') {
+                        newOptions[index] = { ...newOptions[index], isCorrect: !newOptions[index].isCorrect };
+                      } else {
+                        newOptions.forEach((o, i) => newOptions[i] = { ...o, isCorrect: i === index });
+                      }
+                      setQuestionForm({ ...questionForm, options: newOptions });
+                    }}
+                    className="w-4 h-4 accent-[#0071e3]"
+                  />
+                  <input
+                    type="text"
+                    value={opt.content}
+                    disabled={questionForm.type === 'TRUE_FALSE'}
+                    onChange={(e) => {
+                      const newOptions = [...questionForm.options];
+                      newOptions[index] = { ...newOptions[index], content: e.target.value };
+                      setQuestionForm({ ...questionForm, options: newOptions });
+                    }}
+                    className={`flex-1 text-sm py-1.5 ${opt.isCorrect ? 'border-[#0071e3] bg-[#0071e3]/5' : ''}`}
+                    placeholder={`Option ${index + 1}`}
+                  />
+                  {questionForm.type !== 'TRUE_FALSE' && questionForm.options.length > 2 && (
+                    <button onClick={() => {
+                      const newOptions = questionForm.options.filter((_, i) => i !== index);
+                      setQuestionForm({ ...questionForm, options: newOptions });
+                    }} className="text-[#ff3b30] p-1.5 hover:bg-[#ff3b30]/10 rounded">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-3 border-t border-[#f5f5f7]">
+            <button onClick={() => { setShowQuestionFormModal(false); setEditingQuestion(null); setQuestionForm({ content: '', type: 'SINGLE_CHOICE', orderIndex: 1, score: 1, options: [{ content: '', isCorrect: false }, { content: '', isCorrect: false }] }); }} className="btn-secondary !text-[#1d1d1f]">Cancel</button>
+            {editingQuestion ? (
+              <button onClick={handleUpdateQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50">
+                {questionSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            ) : (
+              <button onClick={handleAddQuestion} disabled={questionSaving} className="btn-primary disabled:opacity-50"><Plus size={14} className="inline-block mr-1" /> {questionSaving ? 'Adding...' : 'Add Question'}</button>
+            )}
+          </div>
         </div>
       </Modal>
 
