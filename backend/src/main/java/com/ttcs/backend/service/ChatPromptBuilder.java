@@ -48,12 +48,14 @@ public class ChatPromptBuilder {
                 Tên: %s
                 Email: %s
                 Vai trò: %s
+                UserId: %s
 
                 %s
                 """.formatted(
                 user.getFullName(),
                 user.getEmail(),
                 user.getRole().name(),
+                user.getId(),
                 relevantData.content());
     }
 }
