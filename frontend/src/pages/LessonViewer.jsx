@@ -4,6 +4,7 @@ import { lessonApi } from '../api/lessonApi';
 import { useToast } from '../contexts/ToastContext';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import StatusBadge from '../components/ui/StatusBadge';
+import YoutubePlayer from '../components/YoutubePlayer';
 import {
   ArrowLeft, Video, FileText, Link as LinkIcon,
   CheckCircle, ExternalLink, Clock, BookOpen, Timer, Download,
@@ -20,6 +21,21 @@ function formatDuration(secs) {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+/** Extract YouTube video ID from a watch or short URL */
+function extractYoutubeId(url) {
+  if (!url) return null;
+  if (url.includes('youtube.com/watch?v=')) {
+    try { return new URL(url).searchParams.get('v'); } catch { return null; }
+  }
+  if (url.includes('youtu.be/')) {
+    return url.split('youtu.be/')[1]?.split('?')[0] ?? null;
+  }
+  if (url.includes('youtube.com/embed/')) {
+    return url.split('/embed/')[1]?.split('?')[0] ?? null;
+  }
+  return null;
+}
+
 export default function LessonViewer() {
   const { courseId, lessonId } = useParams();
   const navigate = useNavigate();
@@ -30,21 +46,22 @@ export default function LessonViewer() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [documentUrl, setDocumentUrl] = useState(null); // presigned URL for DOCUMENT lessons
+  const [documentUrl, setDocumentUrl] = useState(null);
 
   // Progress state
   const [progress, setProgress] = useState({ isCompleted: false, watchDurationSecs: 0 });
-  const [videoDurationSecs, setVideoDurationSecs] = useState(null); // only for HTML5 video
+  const [videoDurationSecs, setVideoDurationSecs] = useState(null);
 
-  // Refs to avoid stale closures in intervals
+  // Refs to avoid stale closures in intervals/callbacks
   const watchSecsRef = useRef(0);
   const lessonIdRef = useRef(lessonId);
   const isCompletedRef = useRef(false);
   const syncTimerRef = useRef(null);
   const tickTimerRef = useRef(null);
-  const videoRef = useRef(null);
+  const videoRef = useRef(null);       // <video> for HTML5
+  const ytPlayerRef = useRef(null);    // YoutubePlayer imperative ref
 
-  // Keep refs in sync
+  // Keep refs in sync with state
   useEffect(() => {
     watchSecsRef.current = progress.watchDurationSecs;
     isCompletedRef.current = progress.isCompleted;
@@ -91,7 +108,7 @@ export default function LessonViewer() {
     }
   };
 
-  // ─── Update Progress API ──────────────────────────────────────────
+  // ─── Sync progress to backend ────────────────────────────────────
   const syncToBackend = useCallback(async (overrideCompleted = null) => {
     const currentId = lessonIdRef.current;
     const secs = watchSecsRef.current;
@@ -109,7 +126,7 @@ export default function LessonViewer() {
     }
   }, []);
 
-  // ─── Tick timer (1s) for non-video OR YouTube iframe ──────────────
+  // ─── Tick timer (1s) — for non-video / HTML5 video ───────────────
   const startTickTimer = useCallback(() => {
     if (tickTimerRef.current) clearInterval(tickTimerRef.current);
     tickTimerRef.current = setInterval(() => {
@@ -127,13 +144,11 @@ export default function LessonViewer() {
     }
   }, []);
 
-  // ─── Sync timer (every 30s) ───────────────────────────────────────
+  // ─── Periodic background sync (every 30s) ────────────────────────
   const startSyncTimer = useCallback(() => {
     if (syncTimerRef.current) clearInterval(syncTimerRef.current);
     syncTimerRef.current = setInterval(() => {
-      if (!isCompletedRef.current) {
-        syncToBackend();
-      }
+      if (!isCompletedRef.current) syncToBackend();
     }, 30000);
   }, [syncToBackend]);
 
@@ -148,13 +163,13 @@ export default function LessonViewer() {
   useEffect(() => {
     if (!lesson || progress.isCompleted) return;
 
-    const isHtml5Video = lesson.contentType === 'VIDEO' &&
-      lesson.contentUrl &&
-      !lesson.contentUrl.includes('youtube.com') &&
-      !lesson.contentUrl.includes('youtu.be');
+    const isYoutube = lesson.contentType === 'VIDEO' && extractYoutubeId(lesson.contentUrl);
+    const isHtml5Video = lesson.contentType === 'VIDEO' && lesson.contentUrl && !isYoutube;
 
-    // For HTML5 video, onTimeUpdate handles the tick — no interval needed
-    if (!isHtml5Video) {
+    // YouTube: YoutubePlayer component handles its own tick via onTimeUpdate callback
+    // HTML5 video: onTimeUpdate event on <video> handles tick
+    // Everything else: interval tick
+    if (!isYoutube && !isHtml5Video) {
       startTickTimer();
     }
     startSyncTimer();
@@ -162,19 +177,69 @@ export default function LessonViewer() {
     return () => {
       stopTickTimer();
       stopSyncTimer();
-      // Sync on unmount (navigate away)
+      // Save progress on unmount (navigate away without completing)
       if (!isCompletedRef.current) {
         syncToBackend();
       }
     };
   }, [lesson?.id, progress.isCompleted]);
 
-  // ─── HTML5 video tracking ─────────────────────────────────────────
+  // ─── YouTube callbacks ────────────────────────────────────────────
+
+  /** Called every second while YouTube video is playing */
+  const handleYoutubeTimeUpdate = useCallback((currentSecs) => {
+    if (isCompletedRef.current) return;
+    // Only advance forward (ignore seeking backward)
+    if (currentSecs > watchSecsRef.current) {
+      watchSecsRef.current = currentSecs;
+      setProgress(prev => ({ ...prev, watchDurationSecs: currentSecs }));
+    }
+  }, []);
+
+  /** Called when YouTube player is ready — read duration and set it */
+  const handleYoutubeReady = useCallback((player) => {
+    const dur = Math.floor(player.getDuration?.() ?? 0);
+    if (dur > 0) setVideoDurationSecs(dur);
+  }, []);
+
+  /**
+   * Called when YouTube video finishes playing.
+   * Automatically marks the lesson as complete.
+   */
+  const handleYoutubeEnded = useCallback(async () => {
+    if (isCompletedRef.current) return;
+
+    // Set watchDuration to full video length
+    const dur = ytPlayerRef.current?.getDuration?.() ?? watchSecsRef.current;
+    watchSecsRef.current = Math.floor(dur);
+    setProgress(prev => ({ ...prev, watchDurationSecs: Math.floor(dur) }));
+
+    // Mark complete
+    setCompleting(true);
+    try {
+      const res = await lessonApi.complete(lessonIdRef.current);
+      const data = res.data;
+      setProgress({
+        isCompleted: true,
+        watchDurationSecs: data?.watchDurationSecs ?? Math.floor(dur),
+      });
+      isCompletedRef.current = true;
+      stopTickTimer();
+      stopSyncTimer();
+      toast.success('🎉 Hoàn thành bài học!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Không thể đánh dấu hoàn thành');
+    } finally {
+      setCompleting(false);
+    }
+  }, [stopTickTimer, stopSyncTimer]);
+
+  // ─── HTML5 video callbacks ────────────────────────────────────────
   const handleVideoTimeUpdate = useCallback(() => {
     const video = videoRef.current;
     if (!video || isCompletedRef.current) return;
     const currentSecs = Math.floor(video.currentTime);
-    // Only update if increased (avoid seeking backward inflating time)
     if (currentSecs > watchSecsRef.current) {
       watchSecsRef.current = currentSecs;
       setProgress(prev => ({ ...prev, watchDurationSecs: currentSecs }));
@@ -188,32 +253,50 @@ export default function LessonViewer() {
     const video = videoRef.current;
     if (video && video.duration) {
       setVideoDurationSecs(Math.floor(video.duration));
-      // Resume from saved position
       if (watchSecsRef.current > 0 && watchSecsRef.current < video.duration) {
         video.currentTime = watchSecsRef.current;
       }
     }
   }, []);
 
-  // ─── Mark Complete ────────────────────────────────────────────────
+  /** HTML5 video ended → auto-complete */
+  const handleVideoEnded = useCallback(async () => {
+    if (isCompletedRef.current) return;
+    const dur = videoDurationSecs ?? watchSecsRef.current;
+    watchSecsRef.current = dur;
+    setProgress(prev => ({ ...prev, watchDurationSecs: dur }));
+
+    setCompleting(true);
+    try {
+      const res = await lessonApi.complete(lessonIdRef.current);
+      const data = res.data;
+      setProgress({ isCompleted: true, watchDurationSecs: data?.watchDurationSecs ?? dur });
+      isCompletedRef.current = true;
+      stopTickTimer();
+      stopSyncTimer();
+      toast.success('🎉 Hoàn thành bài học!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Không thể đánh dấu hoàn thành');
+    } finally {
+      setCompleting(false);
+    }
+  }, [videoDurationSecs, stopTickTimer, stopSyncTimer]);
+
+  // ─── Manual complete (non-video content) ─────────────────────────
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      // Use the dedicated /complete endpoint (POST)
       const res = await lessonApi.complete(lessonId);
       const data = res.data;
-
       setProgress({
         isCompleted: true,
         watchDurationSecs: data?.watchDurationSecs ?? watchSecsRef.current,
       });
       watchSecsRef.current = data?.watchDurationSecs ?? watchSecsRef.current;
       isCompletedRef.current = true;
-
-      // Stop timers since lesson is done
       stopTickTimer();
       stopSyncTimer();
-
       toast.success('🎉 Hoàn thành bài học!');
     } catch (err) {
       toast.error('Không thể đánh dấu hoàn thành');
@@ -240,30 +323,21 @@ export default function LessonViewer() {
   };
 
   // ─── Helpers ──────────────────────────────────────────────────────
-  const convertYoutubeUrl = (url) => {
-    if (!url) return '';
-    if (url.includes('youtube.com/watch?v=')) {
-      const videoId = new URL(url).searchParams.get('v');
-      return `https://www.youtube.com/embed/${videoId}?rel=0`;
-    }
-    if (url.includes('youtu.be/')) {
-      const videoId = url.split('youtu.be/')[1]?.split('?')[0];
-      return `https://www.youtube.com/embed/${videoId}?rel=0`;
-    }
-    return url;
-  };
-
   const getProgressPercent = () => {
     if (progress.isCompleted) return 100;
     const duration = videoDurationSecs || ESTIMATED_READING_SECS;
     return Math.min(99, Math.round((progress.watchDurationSecs / duration) * 100));
   };
 
+  // Is this lesson a YouTube video?
+  const isYoutube = lesson?.contentType === 'VIDEO' && !!extractYoutubeId(lesson?.contentUrl);
+  const isVideoLesson = lesson?.contentType === 'VIDEO';
+
   // ─── Content render ───────────────────────────────────────────────
   const renderContent = () => {
     switch (lesson.contentType) {
       case 'VIDEO': {
-        const isYoutube = lesson.contentUrl?.includes('youtube.com') || lesson.contentUrl?.includes('youtu.be');
+        const youtubeId = extractYoutubeId(lesson.contentUrl);
         if (!lesson.contentUrl) {
           return (
             <div className="aspect-video glass-card flex flex-col items-center justify-center gap-3 text-neutral-400">
@@ -272,17 +346,20 @@ export default function LessonViewer() {
             </div>
           );
         }
-        return isYoutube ? (
-          <div className="aspect-video rounded-xl overflow-hidden shadow-lg border border-neutral-200">
-            <iframe
-              src={convertYoutubeUrl(lesson.contentUrl)}
-              className="w-full h-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              title={lesson.title}
+        if (youtubeId) {
+          return (
+            <YoutubePlayer
+              ref={ytPlayerRef}
+              videoId={youtubeId}
+              startSeconds={progress.watchDurationSecs}
+              onReady={handleYoutubeReady}
+              onEnded={handleYoutubeEnded}
+              onTimeUpdate={handleYoutubeTimeUpdate}
             />
-          </div>
-        ) : (
+          );
+        }
+        // HTML5 video (non-YouTube)
+        return (
           <div className="rounded-xl overflow-hidden shadow-lg border border-neutral-200 bg-black">
             <video
               ref={videoRef}
@@ -291,6 +368,7 @@ export default function LessonViewer() {
               className="w-full max-h-[480px]"
               onTimeUpdate={handleVideoTimeUpdate}
               onLoadedMetadata={handleVideoLoadedMetadata}
+              onEnded={handleVideoEnded}
             />
           </div>
         );
@@ -415,59 +493,47 @@ export default function LessonViewer() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {!progress.isCompleted && (
+
+            {/* For YouTube/HTML5 video: hide manual complete button (auto-complete on ended).
+                For other content types: show the manual complete button. */}
+            {!isVideoLesson && (
               <button
-                onClick={handleSaveProgress}
-                disabled={syncing}
-                className="btn-secondary !px-3 !py-2 text-sm"
-                title="Lưu tiến độ ngay"
+                onClick={handleComplete}
+                disabled={completing || progress.isCompleted}
+                className={`btn-primary !px-4 !py-2 text-sm transition-all ${
+                  progress.isCompleted
+                    ? '!bg-emerald-500 opacity-80 cursor-default'
+                    : '!bg-gradient-to-r !from-emerald-500 !to-teal-600 hover:!shadow-emerald-500/30'
+                }`}
               >
-                <Timer size={15} />
-                Lưu tiến độ
+                <CheckCircle size={15} />
+                {progress.isCompleted
+                  ? 'Đã hoàn thành'
+                  : completing
+                  ? 'Đang xử lý...'
+                  : 'Đánh dấu hoàn thành'}
               </button>
             )}
-            <button
-              onClick={handleComplete}
-              disabled={completing || progress.isCompleted}
-              className={`btn-primary !px-4 !py-2 text-sm transition-all ${
-                progress.isCompleted
-                  ? '!bg-emerald-500 opacity-80 cursor-default'
-                  : '!bg-gradient-to-r !from-emerald-500 !to-teal-600 hover:!shadow-emerald-500/30'
-              }`}
-            >
-              <CheckCircle size={15} />
-              {progress.isCompleted
-                ? 'Đã hoàn thành'
-                : completing
-                ? 'Đang xử lý...'
-                : 'Đánh dấu hoàn thành'}
-            </button>
+
+            {/* Video completed badge */}
+            {isVideoLesson && progress.isCompleted && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-600 text-sm font-semibold">
+                <CheckCircle size={15} />
+                Đã hoàn thành
+              </div>
+            )}
+
+            {/* Video: completing spinner */}
+            {isVideoLesson && completing && !progress.isCompleted && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-100 text-neutral-500 text-sm">
+                <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-neutral-300 border-t-primary-500 rounded-full" />
+                Đang xử lý...
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Progress bar */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-neutral-500">
-            <span className="flex items-center gap-1">
-              <Clock size={11} />
-              Đã xem: {formatDuration(progress.watchDurationSecs)}
-              {videoDurationSecs && (
-                <span className="text-neutral-400"> / {formatDuration(videoDurationSecs)}</span>
-              )}
-            </span>
-            <span className={`font-medium ${progress.isCompleted ? 'text-emerald-600' : 'text-neutral-500'}`}>
-              {progress.isCompleted ? '✓ Hoàn thành' : `${percent}%`}
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-neutral-100 border border-neutral-200 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                progress.isCompleted ? 'bg-emerald-500' : 'bg-gradient-to-r from-primary-500 to-blue-500'
-              }`}
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-        </div>
+
       </div>
 
       {/* Content */}
@@ -476,7 +542,11 @@ export default function LessonViewer() {
       {/* Footer hint */}
       {!progress.isCompleted && (
         <p className="text-center text-xs text-neutral-400 pb-4">
-          Tiến độ được tự động lưu mỗi 30 giây • Nhấn "Lưu tiến độ" để lưu ngay
+          {isYoutube
+            ? 'Xem hết video để tự động hoàn thành bài học • Tiến độ được lưu khi bạn thoát'
+            : isVideoLesson
+            ? 'Xem hết video để tự động hoàn thành bài học • Tiến độ được lưu khi bạn thoát'
+            : 'Tiến độ được tự động lưu mỗi 30 giây • Nhấn "Lưu tiến độ" để lưu ngay'}
         </p>
       )}
       {progress.isCompleted && (
