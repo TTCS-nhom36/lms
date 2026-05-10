@@ -225,6 +225,7 @@ public class RagService {
                         chapter.getCourse().getTitle(), chapter.getOrderIndex(), chapter.getTitle()),
                 Map.of("courseId", chapter.getCourse().getId().toString(),
                         "chapterId", chapter.getId().toString(),
+                "createdBy", chapter.getCourse().getCreatedBy().getId().toString(),
                         "visibility", "COURSE",
                         "type", "CHAPTER")));
     }
@@ -248,6 +249,7 @@ public class RagService {
                         lessonContent + "\nNội dung:\n" + chunks.get(i),
                         Map.of("courseId", course.getId().toString(),
                                 "lessonId", lesson.getId().toString(),
+                                "createdBy", course.getCreatedBy().getId().toString(),
                                 "visibility", "COURSE",
                                 "type", "LESSON_CONTENT",
                                 "chunk", String.valueOf(i))));
@@ -259,6 +261,7 @@ public class RagService {
                     lessonContent,
                     Map.of("courseId", course.getId().toString(),
                             "lessonId", lesson.getId().toString(),
+                            "createdBy", course.getCreatedBy().getId().toString(),
                             "visibility", "COURSE",
                             "type", "LESSON")));
         }
@@ -285,6 +288,7 @@ public class RagService {
                 assignmentText,
                 Map.of("courseId", course.getId().toString(),
                         "assignmentId", assignment.getId().toString(),
+                "createdBy", course.getCreatedBy().getId().toString(),
                         "visibility", "COURSE",
                         "type", "ASSIGNMENT")));
     }
@@ -309,6 +313,7 @@ public class RagService {
                 Map.of("courseId", course.getId().toString(),
                         "assignmentId", assignment.getId().toString(),
                         "questionId", q.getId().toString(),
+                "createdBy", course.getCreatedBy().getId().toString(),
                         "visibility", "COURSE",
                         "type", "QUIZ_QUESTION")));
     }
@@ -370,7 +375,7 @@ public class RagService {
                 .query(query)
                 .topK(topK);
         if (filterExpression != null && !filterExpression.isBlank()) {
-            builder.filterExpression(filterExpression);
+            builder.filterExpression(new FilterExpressionTextParser().parse(filterExpression));
         }
         return vectorStore.similaritySearch(
                 builder.build());
@@ -388,6 +393,10 @@ public class RagService {
      */
     public String buildContext(String query, String filterExpression) {
         List<Document> results = search(query, 10, filterExpression);
+        return buildContextFromResults(results);
+    }
+
+    public String buildContextFromResults(List<Document> results) {
         if (results.isEmpty()) {
             return "Không tìm thấy thông tin liên quan trong cơ sở dữ liệu.";
         }
