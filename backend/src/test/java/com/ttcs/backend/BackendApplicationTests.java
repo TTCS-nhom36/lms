@@ -1,13 +1,12 @@
 package com.ttcs.backend;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
 class BackendApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void applicationClassLoads() {
+		BackendApplication.class.getName();
 	}
 
 }

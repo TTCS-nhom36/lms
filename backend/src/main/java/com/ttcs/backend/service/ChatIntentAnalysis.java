@@ -1,0 +1,20 @@
+package com.ttcs.backend.service;
+
+import java.util.Set;
+
+public record ChatIntentAnalysis(Set<Type> types, String normalizedQuestion) {
+
+    public enum Type {
+        COURSE,
+        ENROLLMENT,
+        ASSIGNMENT,
+        GRADE,
+        PROGRESS,
+        LESSON_CONTENT,
+        GENERAL
+    }
+
+    public boolean has(Type type) {
+        return types.contains(type);
+    }
+}
