@@ -27,12 +27,19 @@ public class AiConfig {
     @Value("${spring.ai.google.genai.api-key}")
     private String apiKey;
 
-    private static final String EMBED_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=";
+    @Value("${spring.ai.google.genai.embedding.options.model:gemini-embedding-001}")
+    private String embeddingModel;
+
+    @Value("${spring.ai.google.genai.embedding.options.dimensions:3072}")
+    private int embeddingDimensions;
+
+    private static final String EMBED_URL_PREFIX =
+            "https://generativelanguage.googleapis.com/v1beta/models/";
+    private static final String EMBED_URL_SUFFIX = ":embedContent?key=";
 
     @Bean
     public EmbeddingModel embeddingModel() {
-        return new GeminiEmbeddingModel(apiKey);
+        return new GeminiEmbeddingModel(apiKey, embeddingModel, embeddingDimensions);
     }
 
     /**
@@ -42,11 +49,15 @@ public class AiConfig {
     static class GeminiEmbeddingModel implements EmbeddingModel {
 
         private final String apiKey;
+        private final String model;
+        private final int dimensions;
         private final HttpClient httpClient;
         private final ObjectMapper objectMapper;
 
-        GeminiEmbeddingModel(String apiKey) {
+        GeminiEmbeddingModel(String apiKey, String model, int dimensions) {
             this.apiKey = apiKey;
+            this.model = model;
+            this.dimensions = dimensions;
             this.httpClient = HttpClient.newHttpClient();
             this.objectMapper = new ObjectMapper();
         }
@@ -83,11 +94,12 @@ public class AiConfig {
                     parts.add(part);
                     content.set("parts", parts);
                     requestBody.set("content", content);
+                    requestBody.put("outputDimensionality", dimensions);
 
                     String jsonBody = objectMapper.writeValueAsString(requestBody);
 
                     HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(EMBED_URL + apiKey))
+                            .uri(URI.create(EMBED_URL_PREFIX + model + EMBED_URL_SUFFIX + apiKey))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                             .build();
@@ -103,15 +115,19 @@ public class AiConfig {
                             continue;
                         } else {
                             log.error("Gemini Embedding API error: {} - {}", response.statusCode(), response.body());
-                            return new float[3072]; // Return zero vector on error
+                            return zeroVector(); // Return zero vector on error
                         }
                     } else if (response.statusCode() != 200) {
                         log.error("Gemini Embedding API error: {} - {}", response.statusCode(), response.body());
-                        return new float[3072]; // Return zero vector on error
+                        return zeroVector(); // Return zero vector on error
                     }
 
                     JsonNode responseJson = objectMapper.readTree(response.body());
                     JsonNode values = responseJson.path("embedding").path("values");
+                    if (!values.isArray() || values.size() != dimensions) {
+                        log.error("Gemini Embedding API returned {} dimensions, expected {}", values.size(), dimensions);
+                        return zeroVector();
+                    }
 
                     float[] result = new float[values.size()];
                     for (int i = 0; i < values.size(); i++) {
@@ -122,22 +138,26 @@ public class AiConfig {
                 } catch (Exception e) {
                     log.error("Error calling Gemini Embedding API (attempt {}/{}): {}", attempt, maxRetries, e.getMessage());
                     if (attempt == maxRetries) {
-                        return new float[3072];
+                        return zeroVector();
                     }
                     try {
                         Thread.sleep(retryDelayMs);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
-                        return new float[3072];
+                        return zeroVector();
                     }
                 }
             }
-            return new float[3072];
+            return zeroVector();
+        }
+
+        private float[] zeroVector() {
+            return new float[dimensions];
         }
 
         @Override
         public int dimensions() {
-            return 3072;
+            return dimensions;
         }
     }
 }
