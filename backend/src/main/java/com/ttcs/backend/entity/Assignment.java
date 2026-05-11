@@ -1,7 +1,7 @@
 package com.ttcs.backend.entity;
 
 import com.ttcs.backend.enums.AssignmentType;
-import com.ttcs.backend.listener.RagEntityListener;
+import com.ttcs.backend.listener.chat.RagEntityListener;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
