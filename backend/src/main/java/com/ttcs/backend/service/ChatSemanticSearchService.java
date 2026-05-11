@@ -29,6 +29,7 @@ public class ChatSemanticSearchService {
             String filter = buildVisibilityFilter(user);
             List<Document> results = ragService.search(question, 10, filter);
             List<Document> filtered = filterResultsForUser(user, results);
+            log.info("Qdrant semantic search successful. Found {} documents after filtering.", filtered.size());
             return ragService.buildContextFromResults(filtered);
         } catch (Exception e) {
             log.warn("Qdrant semantic search failed: {}", e.getMessage());
