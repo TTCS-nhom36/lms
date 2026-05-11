@@ -1,8 +1,11 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
 import com.ttcs.backend.dto.response.UploadedDocumentResponse;
 import com.ttcs.backend.entity.*;
+import com.ttcs.backend.event.chat.RagDeleteEvent;
+import com.ttcs.backend.event.chat.RagSyncEvent;
 import com.ttcs.backend.repository.*;
+import com.ttcs.backend.service.CurrentUserService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -115,7 +118,7 @@ public class RagService {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
-    public void onRagSyncEvent(com.ttcs.backend.event.RagSyncEvent event) {
+    public void onRagSyncEvent(RagSyncEvent event) {
         Class<?> clazz = event.entityClass();
         Long id = event.entityId();
         try {
@@ -151,7 +154,7 @@ public class RagService {
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onRagDeleteEvent(com.ttcs.backend.event.RagDeleteEvent event) {
+    public void onRagDeleteEvent(RagDeleteEvent event) {
         Class<?> clazz = event.entityClass();
         Long id = event.entityId();
         try {

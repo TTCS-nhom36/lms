@@ -1,7 +1,7 @@
-package com.ttcs.backend.listener;
+package com.ttcs.backend.listener.chat;
 
-import com.ttcs.backend.event.RagDeleteEvent;
-import com.ttcs.backend.event.RagSyncEvent;
+import com.ttcs.backend.event.chat.RagDeleteEvent;
+import com.ttcs.backend.event.chat.RagSyncEvent;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.PostRemove;
 import jakarta.persistence.PostUpdate;

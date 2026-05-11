@@ -27,7 +27,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 
-import com.ttcs.backend.listener.RagEntityListener;
+import com.ttcs.backend.listener.chat.RagEntityListener;
 import jakarta.persistence.EntityListeners;
 
 @Getter

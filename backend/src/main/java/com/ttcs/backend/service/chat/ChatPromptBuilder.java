@@ -1,8 +1,9 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
-import com.ttcs.backend.entity.ChatMessage;
 import com.ttcs.backend.entity.ChatMessage.MessageRole;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.service.chat.model.ChatCacheMessage;
+import com.ttcs.backend.service.chat.model.ChatRelevantData;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -14,11 +15,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatPromptBuilder {
 
-    public List<Message> build(User user, ChatRelevantData relevantData, List<ChatMessage> history) {
+    public List<Message> build(User user, ChatRelevantData relevantData, List<ChatCacheMessage> history) {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(buildSystemPrompt(user, relevantData)));
 
-        for (ChatMessage msg : history) {
+        for (ChatCacheMessage msg : history) {
             if (msg.getRole() == MessageRole.USER) {
                 messages.add(new UserMessage(msg.getContent()));
             } else {

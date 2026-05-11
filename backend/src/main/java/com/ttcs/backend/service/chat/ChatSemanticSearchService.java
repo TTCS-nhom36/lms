@@ -1,4 +1,4 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
 import com.ttcs.backend.entity.Course;
 import com.ttcs.backend.entity.Enrollment;

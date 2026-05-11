@@ -1,8 +1,8 @@
-package com.ttcs.backend.controller;
+package com.ttcs.backend.controller.chat;
 
 import com.ttcs.backend.dto.request.ChatRequest;
 import com.ttcs.backend.dto.response.ChatMessageResponse;
-import com.ttcs.backend.service.ChatService;
+import com.ttcs.backend.service.chat.ChatService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
