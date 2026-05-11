@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
@@ -31,9 +32,14 @@ import org.hibernate.annotations.OnDeleteAction;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "quiz_attempts", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"user_id", "assignment_id"})
-})
+@Table(name = "quiz_attempts",
+    indexes = {
+        @Index(name = "idx_quiz_attempt_user_assignment", columnList = "user_id, assignment_id")
+    },
+    uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"user_id", "assignment_id"})
+    }
+)
 public class QuizAttempt {
 
     @Id

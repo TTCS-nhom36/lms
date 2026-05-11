@@ -12,6 +12,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Index;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
@@ -32,7 +33,9 @@ import jakarta.persistence.EntityListeners;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "submissions")
+@Table(name = "submissions", indexes = {
+    @Index(name = "idx_submission_user_assignment", columnList = "user_id, assignment_id")
+})
 @EntityListeners(RagEntityListener.class)
 public class Submission {
 
