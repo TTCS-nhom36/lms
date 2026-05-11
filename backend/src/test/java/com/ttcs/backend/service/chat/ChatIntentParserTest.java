@@ -1,7 +1,8 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ttcs.backend.service.chat.model.ChatIntentAnalysis;
 import org.junit.jupiter.api.Test;
 
 class ChatIntentParserTest {

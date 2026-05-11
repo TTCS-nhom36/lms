@@ -1,4 +1,4 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
 import com.ttcs.backend.entity.Assignment;
 import com.ttcs.backend.entity.Course;
@@ -14,6 +14,8 @@ import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.LessonProgressRepository;
 import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
+import com.ttcs.backend.service.chat.model.ChatIntentAnalysis;
+import com.ttcs.backend.service.chat.model.ChatRelevantData;
 import java.text.Normalizer;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
