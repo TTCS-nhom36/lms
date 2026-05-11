@@ -30,6 +30,7 @@ public class ChatBusinessService {
 
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final int MAX_ROWS = 8;
+    private static final int MAX_LIST_ROWS = 50;
 
     private final CourseRepository courseRepository;
     private final EnrollmentRepository enrollmentRepository;
@@ -73,7 +74,7 @@ public class ChatBusinessService {
         List<Course> courses = preferMatches(visibleCourses(user), query, course -> matches(query,
                 course.getTitle(), course.getDescription(), course.getCreatedBy().getFullName()))
                 .stream()
-                .limit(MAX_ROWS)
+                .limit(rowLimit(intent))
                 .toList();
 
         if (courses.isEmpty()) {
@@ -106,7 +107,7 @@ public class ChatBusinessService {
         List<Assignment> assignments = preferMatches(visibleAssignments, query, assignment -> matches(query,
                 assignment.getTitle(), assignment.getDescription(), assignment.getCourse().getTitle()))
                 .stream()
-                .limit(MAX_ROWS)
+                .limit(rowLimit(intent))
                 .toList();
 
         if (assignments.isEmpty()) {
@@ -140,7 +141,7 @@ public class ChatBusinessService {
                 submission.getAssignment().getTitle(),
                 submission.getAssignment().getCourse().getTitle(), submission.getFeedback()))
                 .stream()
-                .limit(MAX_ROWS)
+                .limit(rowLimit(intent))
                 .toList();
 
         if (submissions.isEmpty()) {
@@ -173,7 +174,7 @@ public class ChatBusinessService {
                         progress.getLesson().getChapter().getTitle(),
                         progress.getLesson().getChapter().getCourse().getTitle()))
                 .stream()
-                .limit(MAX_ROWS)
+                .limit(rowLimit(intent))
                 .toList();
 
         if (!progressRows.isEmpty()) {
@@ -198,7 +199,7 @@ public class ChatBusinessService {
                 lesson.getTitle(), lesson.getContentText(),
                 lesson.getChapter().getTitle(), lesson.getChapter().getCourse().getTitle()))
                 .stream()
-                .limit(MAX_ROWS)
+                .limit(rowLimit(intent))
                 .toList();
 
         if (lessons.isEmpty()) {
@@ -222,6 +223,10 @@ public class ChatBusinessService {
         return intent.has(ChatIntentAnalysis.Type.COURSE)
                 || intent.has(ChatIntentAnalysis.Type.ENROLLMENT)
                 || intent.has(ChatIntentAnalysis.Type.GENERAL);
+    }
+
+    private int rowLimit(ChatIntentAnalysis intent) {
+        return intent.listAllRequested() ? MAX_LIST_ROWS : MAX_ROWS;
     }
 
     private List<Course> visibleCourses(User user) {
