@@ -29,4 +29,12 @@ class ChatIntentParserTest {
 
         assertTrue(intent.has(ChatIntentAnalysis.Type.GENERAL));
     }
+
+    @Test
+    void detectsListAllRequest() {
+        ChatIntentAnalysis intent = parser.parse("Liệt kê tất cả bài tập của tôi");
+
+        assertTrue(intent.has(ChatIntentAnalysis.Type.ASSIGNMENT));
+        assertTrue(intent.listAllRequested());
+    }
 }

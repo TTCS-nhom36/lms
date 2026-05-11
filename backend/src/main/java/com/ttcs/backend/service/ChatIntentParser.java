@@ -38,7 +38,7 @@ public class ChatIntentParser {
             types.add(ChatIntentAnalysis.Type.GENERAL);
         }
 
-        return new ChatIntentAnalysis(types, normalized);
+        return new ChatIntentAnalysis(types, normalized, isListAllRequested(normalized));
     }
 
     private String normalize(String value) {
@@ -71,5 +71,11 @@ public class ChatIntentParser {
             }
         }
         return false;
+    }
+
+    private boolean isListAllRequested(String normalized) {
+        return containsAny(normalized,
+                "tat ca", "toan bo", "day du", "liet ke", "danh sach",
+                "all", "list", "show all", "full list", "everything");
     }
 }
