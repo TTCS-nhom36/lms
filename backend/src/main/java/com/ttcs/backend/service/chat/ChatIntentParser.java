@@ -1,8 +1,9 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
 import java.text.Normalizer;
 import java.util.EnumSet;
 import java.util.Locale;
+import com.ttcs.backend.service.chat.model.ChatIntentAnalysis;
 import org.springframework.stereotype.Service;
 
 @Service

@@ -1,7 +1,7 @@
-package com.ttcs.backend.controller;
+package com.ttcs.backend.controller.chat;
 
 import com.ttcs.backend.dto.response.UploadedDocumentResponse;
-import com.ttcs.backend.service.RagService;
+import com.ttcs.backend.service.chat.RagService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package com.ttcs.backend.service;
+package com.ttcs.backend.service.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;

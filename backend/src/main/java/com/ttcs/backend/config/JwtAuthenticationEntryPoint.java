@@ -1,8 +1,6 @@
 package com.ttcs.backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ttcs.backend.exception.ApiErrorResponse;
 import com.ttcs.backend.exception.ErrorCode;
 import jakarta.servlet.RequestDispatcher;
@@ -15,20 +13,15 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.TimeZone;
 import java.time.LocalDateTime;
 
 @Component
 public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
-    private final ObjectMapper objectMapper = buildObjectMapper();
+    private final ObjectMapper objectMapper;
 
-    private static ObjectMapper buildObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.setTimeZone(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
-        return mapper;
+    public JwtAuthenticationEntryPoint(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
     }
 
     @Override
