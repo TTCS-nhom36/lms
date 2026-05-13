@@ -3,6 +3,7 @@ package com.ttcs.backend.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -27,7 +28,6 @@ import com.ttcs.backend.service.CustomUserDetailService;
 @RequiredArgsConstructor
 public class SecurityConfig {
     private final String[] PUBLIC_ENDPOINT = {
-            "/api/lms/users",
             "/api/lms/auth/login",
             "/api/lms/auth/refresh",
             "/api/lms/auth/logout",
@@ -45,6 +45,7 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests((authorize) -> authorize
+                        .requestMatchers(HttpMethod.POST, "/api/lms/users").permitAll()
                         .requestMatchers(PUBLIC_ENDPOINT).permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated())

@@ -1,17 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, X, Trash2, Send, Sparkles, BookOpen } from 'lucide-react';
 import { chatApi } from '../../api/chatApi';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import './ChatWidget.css';
 
-/* ─── Simple markdown parser ─── */
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function renderMarkdown(text) {
   if (!text) return '';
 
-  let html = text
+  let html = escapeHtml(text)
     // Code blocks (``` ... ```)
     .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      return `<pre><code class="${lang}">${code.replace(/</g, '&lt;').replace(/>/g, '&gt;').trim()}</code></pre>`;
+      const safeLang = String(lang || '').replace(/[^\w-]/g, '');
+      return `<pre><code class="${safeLang}">${code.trim()}</code></pre>`;
     })
     // Inline code
     .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -31,7 +40,7 @@ function renderMarkdown(text) {
   // Wrap consecutive <li> in <ul>
   html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
 
-  // Paragraphs — wrap remaining lines
+  // Paragraphs - wrap remaining lines
   html = html
     .split('\n\n')
     .map(block => {
@@ -53,13 +62,24 @@ function renderMarkdown(text) {
   return html;
 }
 
-/* ─── Suggestion chips ─── */
 const SUGGESTIONS = [
   'Tóm tắt nội dung khóa học của tôi',
   'Bài tập nào sắp đến hạn?',
   'Cho tôi mẹo học tập hiệu quả',
   'Giải thích khái niệm này cho tôi...',
 ];
+
+let optimisticMessageId = 0;
+
+function createOptimisticMessage(role, content) {
+  optimisticMessageId += 1;
+  return {
+    id: `local-${optimisticMessageId}`,
+    role,
+    content,
+    createdAt: new Date().toISOString(),
+  };
+}
 
 export default function ChatWidget() {
   const { user } = useAuth();
@@ -76,34 +96,34 @@ export default function ChatWidget() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await chatApi.getHistory();
+      setMessages(res.data || []);
+    } catch (err) {
+      console.error('Failed to load chat history:', err);
+    } finally {
+      setHistoryLoaded(true);
+    }
+  }, []);
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading, scrollToBottom]);
 
-  // Load history when opened
   useEffect(() => {
     if (isOpen && !historyLoaded) {
-      loadHistory();
+      queueMicrotask(() => {
+        void loadHistory();
+      });
     }
-  }, [isOpen, historyLoaded]);
+  }, [isOpen, historyLoaded, loadHistory]);
 
-  // Focus input when panel opens
   useEffect(() => {
     if (isOpen && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 350);
     }
   }, [isOpen]);
-
-  const loadHistory = async () => {
-    try {
-      const res = await chatApi.getHistory();
-      setMessages(res.data || []);
-      setHistoryLoaded(true);
-    } catch (err) {
-      console.error('Failed to load chat history:', err);
-      setHistoryLoaded(true);
-    }
-  };
 
   const handleToggle = () => {
     if (isOpen) {
@@ -121,13 +141,7 @@ export default function ChatWidget() {
     const msg = (text || input).trim();
     if (!msg || isLoading) return;
 
-    // Add user message optimistically
-    const userMsg = {
-      id: Date.now(),
-      role: 'USER',
-      content: msg,
-      createdAt: new Date().toISOString(),
-    };
+    const userMsg = createOptimisticMessage('USER', msg);
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
@@ -140,7 +154,7 @@ export default function ChatWidget() {
       setMessages(prev => [
         ...prev,
         {
-          id: Date.now() + 1,
+          id: `local-error-${optimisticMessageId + 1}`,
           role: 'ASSISTANT',
           content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.',
           createdAt: new Date().toISOString(),
@@ -169,7 +183,6 @@ export default function ChatWidget() {
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
-    // Auto-resize textarea
     const el = e.target;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 100) + 'px';
@@ -184,10 +197,8 @@ export default function ChatWidget() {
 
   return (
     <>
-      {/* Chat Panel */}
       {isOpen && (
         <div className={`chat-panel${isClosing ? ' closing' : ''}`} id="chat-panel">
-          {/* Header */}
           <div className="chat-panel__header">
             <div className="chat-panel__header-avatar">
               <Sparkles size={18} />
@@ -215,14 +226,13 @@ export default function ChatWidget() {
             </div>
           </div>
 
-          {/* Messages */}
           <div className="chat-panel__messages" id="chat-messages">
             {messages.length === 0 && !isLoading ? (
               <div className="chat-welcome">
                 <div className="chat-welcome__icon">
                   <BookOpen size={26} />
                 </div>
-                <div className="chat-welcome__title">Xin chào, {user?.fullName?.split(' ').pop() || 'bạn'}! 👋</div>
+                <div className="chat-welcome__title">Xin chào, {user?.fullName?.split(' ').pop() || 'bạn'}!</div>
                 <div className="chat-welcome__desc">
                   Mình là trợ lý học tập AI. Hỏi mình bất cứ điều gì về khóa học, bài tập, hay mẹo học tập nhé!
                 </div>
@@ -262,7 +272,6 @@ export default function ChatWidget() {
                   </div>
                 ))}
 
-                {/* Typing indicator */}
                 {isLoading && (
                   <div className="chat-typing">
                     <div className="chat-typing__avatar">
@@ -280,7 +289,6 @@ export default function ChatWidget() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div className="chat-panel__input-area">
             <div className="chat-panel__input-wrap">
               <textarea
@@ -307,7 +315,6 @@ export default function ChatWidget() {
         </div>
       )}
 
-      {/* Floating Bubble */}
       <button
         className={`chat-bubble${isOpen ? ' open' : ''}`}
         onClick={handleToggle}

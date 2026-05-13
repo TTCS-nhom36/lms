@@ -5,6 +5,7 @@ import com.ttcs.backend.dto.request.SubmitQuizRequest;
 import com.ttcs.backend.dto.response.QuizAttemptResponse;
 import com.ttcs.backend.dto.response.SubmitQuizResponse;
 import com.ttcs.backend.service.QuizAttemptService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,18 +27,20 @@ public class QuizAttemptController {
     }
 
     @PostMapping
-    public ResponseEntity<QuizAttemptResponse> createAttempt(@RequestBody CreateAttemptRequest request) {
+    public ResponseEntity<QuizAttemptResponse> createAttempt(@Valid @RequestBody CreateAttemptRequest request) {
+        request.setUserId(currentUserService.getCurrentUserId());
         return ResponseEntity.ok(quizAttemptService.createAttempt(request));
     }
 
     @PostMapping("/submit")
-    public ResponseEntity<SubmitQuizResponse> submitQuiz(@RequestBody SubmitQuizRequest request) {
+    public ResponseEntity<SubmitQuizResponse> submitQuiz(@Valid @RequestBody SubmitQuizRequest request) {
+        request.setStudentId(currentUserService.getCurrentUserId());
         return ResponseEntity.ok(quizAttemptService.submitQuiz(request));
     }
 
     @GetMapping("/{id}/result")
     public ResponseEntity<SubmitQuizResponse> getAttemptResult(@PathVariable Long id) {
-        return ResponseEntity.ok(quizAttemptService.getAttemptResult(id));
+        return ResponseEntity.ok(quizAttemptService.getAttemptResult(id, currentUserService.getCurrentUserId()));
     }
 
     @GetMapping("/assignment/{assignmentId}/my-attempt")

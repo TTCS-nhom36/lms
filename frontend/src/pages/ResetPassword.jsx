@@ -1,7 +1,12 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Lock, ShieldCheck } from 'lucide-react';
 import { authApi } from '../api/authApi';
-import { Sparkles, Layers3, ArrowRight, Lock, ShieldCheck } from 'lucide-react';
+import AuthCard from '../components/auth/AuthCard';
+import AuthError from '../components/auth/AuthError';
+import AuthField from '../components/auth/AuthField';
+import AuthShell from '../components/auth/AuthShell';
+import AuthSubmitButton from '../components/auth/AuthSubmitButton';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -19,8 +24,8 @@ export default function ResetPassword() {
     }
   }, [email, navigate]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError('');
     setLoading(true);
     try {
@@ -34,75 +39,25 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen px-5 py-6 lg:px-10 lg:py-8 flex items-center justify-center">
-      <div className="w-full max-w-md">
-        <section className="card px-5 py-5 lg:px-6 lg:py-6 animate-slide-up flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <div className="section-kicker mb-2">Account Recovery</div>
-              <h2 className="card-title">Reset Password</h2>
-            </div>
-            <div className="w-11 h-11 rounded-2xl bg-[color:var(--app-accent-soft)] text-[color:var(--app-accent)] flex items-center justify-center">
-              <Layers3 size={18} />
-            </div>
+    <AuthShell>
+      <AuthCard kicker="Account Recovery" title="Reset Password" centered>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <AuthError message={error} />
+
+          <AuthField icon={ShieldCheck} label="OTP" type="text" required value={otp} onChange={(event) => setOtp(event.target.value)} className="tracking-widest text-lg" placeholder="000000" maxLength={6} />
+          <AuthField icon={Lock} label="New Password" type="password" required minLength={6} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="********" />
+
+          <AuthSubmitButton loading={loading} loadingText="Resetting...">
+            Reset Password
+          </AuthSubmitButton>
+
+          <div className="text-center mt-4">
+            <Link to="/login" className="text-sm font-medium text-[color:var(--app-accent)] hover:underline">
+              Back to sign in
+            </Link>
           </div>
-
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
-                {error}
-              </div>
-            )}
-            
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                <ShieldCheck size={16} className="text-[color:var(--app-text-soft)]" />
-                OTP
-              </label>
-              <input
-                type="text"
-                required
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                className="app-input w-full tracking-widest text-lg"
-                placeholder="000000"
-                maxLength={6}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                <Lock size={16} className="text-[color:var(--app-text-soft)]" />
-                New Password
-              </label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="app-input w-full"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full justify-center mt-2"
-            >
-              {loading ? 'Resetting...' : 'Reset Password'}
-              {!loading && <ArrowRight size={18} />}
-            </button>
-            
-            <div className="text-center mt-4">
-              <Link to="/login" className="text-sm font-medium text-[color:var(--app-accent)] hover:underline">
-                Back to sign in
-              </Link>
-            </div>
-          </form>
-        </section>
-      </div>
-    </div>
+        </form>
+      </AuthCard>
+    </AuthShell>
   );
 }

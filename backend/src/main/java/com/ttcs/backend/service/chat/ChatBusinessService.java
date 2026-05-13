@@ -292,9 +292,8 @@ public class ChatBusinessService {
     }
 
     private boolean isStopWord(String token) {
-        return List.of("cua", "của", "toi", "tôi", "ban", "bạn", "cho", "voi", "với",
-                        "trong", "nhung", "những", "cac", "các", "hay", "hãy", "giup",
-                        "giúp", "minh", "mình", "em", "anh", "chi", "chị")
+        return List.of("cua", "toi", "ban", "cho", "voi", "trong", "nhung", "cac", "hay",
+                        "giup", "minh", "em", "anh", "chi")
                 .contains(token);
     }
 

@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { authApi } from '../api/authApi';
 import { userApi } from '../api/userApi';
-
-const AuthContext = createContext(null);
+import { normalizeRole } from '../utils/roles';
+import { clearTokens, getAccessToken, setTokens } from '../utils/tokenStorage';
+import { AuthContext } from './authContext';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -10,15 +11,14 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const initAuth = async () => {
-      const token = localStorage.getItem('lms_access_token');
+      const token = getAccessToken();
       if (token) {
         try {
           const res = await userApi.getMe();
           setUser(res.data);
         } catch (error) {
           console.error("Failed to restore session", error);
-          localStorage.removeItem('lms_access_token');
-          localStorage.removeItem('lms_refresh_token');
+          clearTokens();
         }
       }
       setLoading(false);
@@ -29,8 +29,7 @@ export function AuthProvider({ children }) {
   const login = async (credentials) => {
     const res = await authApi.login(credentials);
     const { accessToken, refreshToken } = res.data;
-    localStorage.setItem('lms_access_token', accessToken);
-    localStorage.setItem('lms_refresh_token', refreshToken);
+    setTokens({ accessToken, refreshToken });
     
     // Fetch profile
     const profileRes = await userApi.getMe();
@@ -47,31 +46,23 @@ export function AuthProvider({ children }) {
     } catch (e) {
       console.error(e);
     } finally {
-      localStorage.removeItem('lms_access_token');
-      localStorage.removeItem('lms_refresh_token');
+      clearTokens();
       setUser(null);
     }
   };
 
-  const isAdmin = user?.role === 'ADMIN';
-  const isInstructor = user?.role === 'INSTRUCTOR';
-  const isStudent = user?.role === 'STUDENT';
+  const userRole = normalizeRole(user?.role);
+  const isAdmin = userRole === 'ADMIN';
+  const isInstructor = userRole === 'INSTRUCTOR';
+  const isStudent = userRole === 'STUDENT';
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser, login, register, logout, isAdmin, isInstructor, isStudent }}>
+    <AuthContext.Provider value={{ user, setUser, login, register, logout, userRole, isAdmin, isInstructor, isStudent }}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 }

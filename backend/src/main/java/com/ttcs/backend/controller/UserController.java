@@ -8,6 +8,8 @@ import com.ttcs.backend.dto.response.PageResponse;
 import com.ttcs.backend.dto.response.UserResponse;
 import com.ttcs.backend.enums.UserRole;
 import com.ttcs.backend.service.UserService;
+import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import java.util.UUID;
@@ -37,6 +39,7 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PageResponse<UserResponse>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UserRole role,
@@ -48,28 +51,32 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserResponse> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(userService.findById(id));
     }
 
     @PostMapping
-    public ResponseEntity<UserResponse> create(@RequestBody UserRequest request) {
+    public ResponseEntity<UserResponse> create(@Valid @RequestBody UserRequest request) {
         return ResponseEntity.ok(userService.create(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<UserResponse> update(@PathVariable UUID id, @RequestBody UserRequest request) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> update(@PathVariable UUID id, @Valid @RequestBody UserRequest request) {
         return ResponseEntity.ok(userService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         userService.disable(id);
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/role")
-    public ResponseEntity<UserResponse> updateRole(@PathVariable UUID id, @RequestBody UpdateUserRoleRequest request) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> updateRole(@PathVariable UUID id, @Valid @RequestBody UpdateUserRoleRequest request) {
         return ResponseEntity.ok(userService.updateRole(id, request));
     }
 
@@ -79,13 +86,13 @@ public class UserController {
     }
 
     @PutMapping("/me")
-    public ResponseEntity<UserResponse> updateMyProfile(@AuthenticationPrincipal Jwt jwt, @RequestBody UpdateMyProfileRequest request) {
+    public ResponseEntity<UserResponse> updateMyProfile(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody UpdateMyProfileRequest request) {
         UserResponse user = userService.findByEmail(jwt.getSubject());
         return ResponseEntity.ok(userService.updateProfile(user.getId(), request));
     }
 
     @PatchMapping("/me/password")
-    public ResponseEntity<Void> changeMyPassword(@AuthenticationPrincipal Jwt jwt, @RequestBody ChangePasswordRequest request) {
+    public ResponseEntity<Void> changeMyPassword(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody ChangePasswordRequest request) {
         UserResponse user = userService.findByEmail(jwt.getSubject());
         userService.changePassword(user.getId(), request);
         return ResponseEntity.noContent().build();

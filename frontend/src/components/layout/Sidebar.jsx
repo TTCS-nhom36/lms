@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import {
   LayoutDashboard, BookOpen, Compass, BookMarked,
   User, GraduationCap,
@@ -39,7 +39,7 @@ function NavItem({ item }) {
       to={item.path}
       className={({ isActive }) => `app-nav-link${isActive ? ' active' : ''}`}
     >
-      {({ isActive }) => (
+      {() => (
         <>
           <Icon size={16} strokeWidth={1.9} className="app-nav-link__icon" />
           <span className="app-nav-link__label">{item.label}</span>

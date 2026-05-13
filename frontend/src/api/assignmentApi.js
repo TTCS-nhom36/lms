@@ -10,6 +10,7 @@ export const assignmentApi = {
   submit: (id, data) => api.post(`/assignments/${id}/submit`, data),
   getSubmissions: (id) => api.get(`/assignments/${id}/submissions`),
   getMySubmission: (id) => api.get(`/assignments/${id}/my-submission`),
+  deleteMySubmission: (id) => api.delete(`/assignments/${id}/my-submission`),
   getQuestions: (id) => api.get(`/assignments/${id}/questions`),
   
 };

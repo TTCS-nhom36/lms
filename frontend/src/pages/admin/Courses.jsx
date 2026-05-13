@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { courseApi } from '../../api/courseApi';
-import { useToast } from '../../contexts/ToastContext';
+import { useToast } from '../../hooks/useToast';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { getApiErrorMessage } from '../../utils/apiError';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import Modal from '../../components/ui/Modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import StatusBadge from '../../components/ui/StatusBadge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
 import Pagination from '../../components/ui/Pagination';
-import { Plus, Search, Edit, Trash2, Eye, Send, BookOpen } from 'lucide-react';
+import PageHeader from '../../components/ui/PageHeader';
+import SearchInput from '../../components/ui/SearchInput';
+import CardGrid from '../../components/ui/CardGrid';
+import Button from '../../components/ui/Button';
+import Dropdown from '../../components/ui/Dropdown';
+import CourseCard from '../../components/course/CourseCard';
+import { Plus, Edit, Trash2, Send, BookOpen } from 'lucide-react';
 
 export default function AdminCourses() {
   const toast = useToast();
@@ -20,25 +25,24 @@ export default function AdminCourses() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [statusFilter, setStatusFilter] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const { user } = useAuth();
-
-  useEffect(() => { loadCourses(); }, [page, search, statusFilter]);
-
-  const loadCourses = async () => {
+  const loadCourses = useCallback(async () => {
     try {
       const params = { page, size: 12 };
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (statusFilter) params.status = statusFilter;
       const res = await courseApi.getAll(params);
       setCourses(res.data.items || []);
       setTotalPages(res.data.totalPages || 0);
       setTotalElements(res.data.totalElements || 0);
-    } catch { toast.error('Failed to load courses'); }
+    } catch (error) { toast.error(getApiErrorMessage(error, 'Failed to load courses')); }
     finally { setLoading(false); }
-  };
+  }, [debouncedSearch, page, statusFilter, toast]);
+
+  useEffect(() => { loadCourses(); }, [loadCourses]);
 
   const handleCreate = () => {
     navigate('/admin/courses/new');
@@ -52,82 +56,68 @@ export default function AdminCourses() {
 
   const handleDelete = async () => {
     try { await courseApi.delete(deleteId); toast.success('Course archived'); setShowConfirm(false); loadCourses(); }
-    catch { toast.error('Failed to archive course'); }
+    catch (error) { toast.error(getApiErrorMessage(error, 'Failed to archive course')); }
   };
 
   const handlePublish = async (id) => {
     try { await courseApi.publish(id); toast.success('Course published'); loadCourses(); }
-    catch { toast.error('Failed to publish course'); }
+    catch (error) { toast.error(getApiErrorMessage(error, 'Failed to publish course')); }
   };
 
   if (loading) return <LoadingSpinner text="Loading courses..." />;
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">Course Management</h2>
-          <p className="text-xs text-gray-500 mt-0.5">{totalElements} total courses</p>
-        </div>
-        <button onClick={handleCreate} className="btn-primary">
-          <Plus size={15} /> New Course
-        </button>
-      </div>
+      <PageHeader
+        title="Course Management"
+        description={`${totalElements} total courses`}
+        actions={<Button onClick={handleCreate}><Plus size={15} /> New Course</Button>}
+      />
 
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Search courses..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="!pl-9 !text-[13px]" />
-        </div>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} className="!w-36 !text-[13px]">
-          <option value="">All Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="PUBLISHED">Published</option>
-          <option value="ARCHIVED">Archived</option>
-        </select>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchInput value={search} placeholder="Search courses..." className="flex-1 max-w-sm" onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
+        <Dropdown
+          value={statusFilter}
+          placeholder="All Status"
+          options={[
+            { value: 'DRAFT', label: 'Draft' },
+            { value: 'PUBLISHED', label: 'Published' },
+            { value: 'ARCHIVED', label: 'Archived' },
+          ]}
+          onChange={(status) => { setStatusFilter(status); setPage(0); }}
+          className="w-36"
+        />
       </div>
 
       {courses.length === 0 ? (
         <EmptyState icon={BookOpen} title="No courses found" />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <CardGrid>
           {courses.map((c, i) => (
-            <div
+            <CourseCard
               key={c.id}
-              onClick={() => navigate(`/admin/courses/${c.id}/edit`)}
-              className="card overflow-hidden animate-slide-up cursor-pointer"
-              style={{ opacity: 0, animationDelay: `${i * 0.04}s` }}
-            >
-              <div className="h-32 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative">
-                {c.thumbnailUrl ? (
-                  <img src={c.thumbnailUrl} alt={c.title} className="w-full h-full object-cover" />
-                ) : (
-                  <BookOpen size={32} className="text-blue-300" />
-                )}
-                <div className="absolute top-2.5 right-2.5">
-                  <StatusBadge status={c.status} size="xs" />
-                </div>
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-gray-900 text-sm truncate">{c.title}</h3>
-                <p className="text-xs text-gray-400 mt-1 line-clamp-2">{c.description || 'No description'}</p>
-                <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-100">
-                  <button onClick={(e) => { e.stopPropagation(); handleEdit(c); }} className="p-1.5 rounded-md text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer" title="Edit">
+              course={c}
+              index={i}
+              statusPlacement="image"
+              onClick={() => navigate(`/admin/courses/${c.id}`)}
+              actions={
+                <>
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(c); }} className="!p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50" title="Edit">
                     <Edit size={14} />
-                  </button>
+                  </Button>
                   {c.status === 'DRAFT' && (
-                    <button onClick={(e) => { e.stopPropagation(); handlePublish(c.id); }} className="p-1.5 rounded-md text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors cursor-pointer" title="Publish">
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handlePublish(c.id); }} className="!p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50" title="Publish">
                       <Send size={14} />
-                    </button>
+                    </Button>
                   )}
-                  <button onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); setShowConfirm(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors ml-auto cursor-pointer" title="Archive">
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setDeleteId(c.id); setShowConfirm(true); }} className="!p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 ml-auto" title="Archive">
                     <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
+                  </Button>
+                </>
+              }
+            />
           ))}
-        </div>
+        </CardGrid>
       )}
 
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />

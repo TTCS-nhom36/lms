@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
+import Avatar from '../ui/Avatar';
 import {
   Bell, LogOut, UserCircle2, ChevronDown, GraduationCap,
   LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X, BarChart3, FileText,
@@ -33,15 +34,6 @@ export default function TopBar() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const menu = isAdmin ? adminMenu : isInstructor ? instructorMenu : studentMenu;
-
-  const initials = useMemo(() => {
-    return user?.fullName
-      ?.split(' ')
-      .map((part) => part[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase() || '?';
-  }, [user?.fullName]);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -105,13 +97,7 @@ export default function TopBar() {
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
-          <span className="app-topbar__avatar overflow-hidden">
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
-            ) : (
-              initials
-            )}
-          </span>
+          <Avatar name={user?.fullName} src={user?.avatarUrl} size="sm" className="app-topbar__avatar overflow-hidden" />
           <ChevronDown size={14} className="app-topbar__chevron" />
         </button>
 

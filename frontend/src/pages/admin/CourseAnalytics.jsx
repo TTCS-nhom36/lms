@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { courseApi } from '../../api/courseApi';
 import { statsApi } from '../../api/statsApi';
 import CourseStatsPanel from '../../components/stats/CourseStatsPanel';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import { useToast } from '../../contexts/ToastContext';
+import PageHeader from '../../components/ui/PageHeader';
+import { useToast } from '../../hooks/useToast';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function AdminCourseAnalytics() {
 	const toast = useToast();
@@ -13,17 +15,7 @@ export default function AdminCourseAnalytics() {
 	const [loading, setLoading] = useState(true);
 	const [courseLoading, setCourseLoading] = useState(false);
 
-	useEffect(() => {
-		loadCourses();
-	}, []);
-
-	useEffect(() => {
-		if (selectedCourseId) {
-			loadCourseStats(selectedCourseId);
-		}
-	}, [selectedCourseId]);
-
-	const loadCourses = async () => {
+	const loadCourses = useCallback(async () => {
 		setLoading(true);
 		try {
 			const coursesRes = await courseApi.getAll({ size: 1000 });
@@ -36,13 +28,13 @@ export default function AdminCourseAnalytics() {
 				setCourseStats(null);
 			}
 		} catch (error) {
-			toast.error(error.response?.data?.message || 'Failed to load courses');
+			toast.error(getApiErrorMessage(error, 'Failed to load courses'));
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [toast]);
 
-	const loadCourseStats = async (courseId) => {
+	const loadCourseStats = useCallback(async (courseId) => {
 		setCourseLoading(true);
 		try {
 			const [overviewRes, completionRes, submissionRes, scoreRes, attendanceRes] = await Promise.all([
@@ -60,17 +52,27 @@ export default function AdminCourseAnalytics() {
 				attendance: attendanceRes.data || [],
 			});
 		} catch (error) {
-			toast.error(error.response?.data?.message || 'Failed to load course analytics');
+			toast.error(getApiErrorMessage(error, 'Failed to load course analytics'));
 		} finally {
 			setCourseLoading(false);
 		}
-	};
+	}, [toast]);
+
+	useEffect(() => {
+		loadCourses();
+	}, [loadCourses]);
+
+	useEffect(() => {
+		if (selectedCourseId) {
+			loadCourseStats(selectedCourseId);
+		}
+	}, [loadCourseStats, selectedCourseId]);
 
 	if (loading) return <LoadingSpinner text="Loading analytics..." />;
 
 	return (
 		<div className="space-y-6 animate-fade-in">
-			
+			<PageHeader title="Course Analytics" description="Track progress, submissions, score spread, and attendance across courses." />
 
 			<CourseStatsPanel
 				
