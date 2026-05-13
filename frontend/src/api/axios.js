@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearTokens, getAccessToken, getRefreshToken, setTokens } from '../utils/tokenStorage';
 
 const api = axios.create({
   baseURL: '/api/lms',
@@ -8,7 +9,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('lms_access_token');
+  const token = getAccessToken();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
   }
@@ -58,7 +59,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = localStorage.getItem('lms_refresh_token');
+      const refreshToken = getRefreshToken();
 
       if (refreshToken) {
         return new Promise(function (resolve, reject) {
@@ -66,10 +67,7 @@ api.interceptors.response.use(
             .then(({ data }) => {
               const { accessToken, refreshToken: newRefreshToken } = data;
               
-              localStorage.setItem('lms_access_token', accessToken);
-              if (newRefreshToken) {
-                localStorage.setItem('lms_refresh_token', newRefreshToken);
-              }
+              setTokens({ accessToken, refreshToken: newRefreshToken || refreshToken });
               
               api.defaults.headers.common['Authorization'] = 'Bearer ' + accessToken;
               originalRequest.headers['Authorization'] = 'Bearer ' + accessToken;
@@ -79,8 +77,7 @@ api.interceptors.response.use(
             })
             .catch((err) => {
               processQueue(err, null);
-              localStorage.removeItem('lms_access_token');
-              localStorage.removeItem('lms_refresh_token');
+              clearTokens();
               window.location.href = '/login';
               reject(err);
             })
@@ -89,7 +86,7 @@ api.interceptors.response.use(
             });
         });
       } else {
-        localStorage.removeItem('lms_access_token');
+        clearTokens();
         window.location.href = '/login';
         return Promise.reject(error);
       }

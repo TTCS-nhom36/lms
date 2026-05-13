@@ -1,15 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { userApi } from '../api/userApi';
-import { User, Lock, Save, Camera, Loader2 } from 'lucide-react';
+import Avatar from '../components/ui/Avatar';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import Input from '../components/ui/Input';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { getApiErrorMessage } from '../utils/apiError';
+import { Camera, Loader2, Lock, Save, User } from 'lucide-react';
 
 export default function Profile() {
   const { user, setUser } = useAuth();
   const toast = useToast();
   const fileInputRef = useRef(null);
-
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,9 +22,7 @@ export default function Profile() {
   const [passwordForm, setPasswordForm] = useState({ newPassword: '' });
   const [showPasswordForm, setShowPasswordForm] = useState(false);
 
-  useEffect(() => { loadProfile(); }, []);
-
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       const res = await userApi.getMe();
       setProfile(res.data);
@@ -28,146 +30,150 @@ export default function Profile() {
     } catch {
       setProfile({ fullName: user?.fullName, email: user?.email, role: user?.role });
       setForm({ fullName: user?.fullName || '', phone: '', avatarUrl: '' });
-    } finally { setLoading(false); }
-  };
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.email, user?.fullName, user?.role]);
+
+  useEffect(() => { loadProfile(); }, [loadProfile]);
 
   const handleAvatarUpload = async (file) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) { toast.error('Chỉ chấp nhận file ảnh'); return; }
-    if (file.size > 5 * 1024 * 1024) { toast.error('Ảnh không được vượt quá 5 MB'); return; }
+    if (!file.type.startsWith('image/')) {
+      toast.error('Only image files are supported');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be 5 MB or smaller');
+      return;
+    }
     setUploadingAvatar(true);
     try {
       const res = await userApi.uploadAvatar(file);
-      const updated = res.data;
-      setProfile(updated);
-      setForm(prev => ({ ...prev, avatarUrl: updated.avatarUrl || '' }));
-      setUser(updated);
-      toast.success('Cập nhật ảnh đại diện thành công');
-    } catch { toast.error('Tải ảnh thất bại'); }
-    finally { setUploadingAvatar(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+      setProfile(res.data);
+      setForm((current) => ({ ...current, avatarUrl: res.data.avatarUrl || '' }));
+      setUser(res.data);
+      toast.success('Avatar updated');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Avatar upload failed'));
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleSave = async () => {
+    if (!form.fullName.trim()) {
+      toast.error('Full name is required');
+      return;
+    }
     setSaving(true);
     try {
       const res = await userApi.updateMe(form);
       setProfile(res.data);
       setUser(res.data);
-      toast.success('Cập nhật thông tin thành công');
-    } catch { toast.error('Cập nhật thất bại'); }
-    finally { setSaving(false); }
+      toast.success('Profile updated');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Profile update failed'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleChangePassword = async () => {
-    if (!passwordForm.newPassword) return;
+    if (passwordForm.newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
     try {
       await userApi.changePassword(passwordForm);
-      toast.success('Đổi mật khẩu thành công');
+      toast.success('Password changed');
       setPasswordForm({ newPassword: '' });
       setShowPasswordForm(false);
-    } catch { toast.error('Đổi mật khẩu thất bại'); }
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Password change failed'));
+    }
   };
 
-  if (loading) return <LoadingSpinner text="Đang tải thông tin..." />;
-  const dp = profile || user;
+  if (loading) return <LoadingSpinner text="Loading profile..." />;
+  const displayProfile = profile || user;
 
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
-      {/* Header card with avatar upload */}
-      <div className="card p-6 mb-5 relative overflow-hidden">
+      <Card className="p-6 mb-5 relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-r from-indigo-50 via-blue-50 to-sky-50" />
         <div className="relative flex items-end gap-5 mt-8">
-          {/* Clickable avatar */}
           <div className="relative group">
-            <div
+            <button
+              type="button"
               className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 overflow-hidden flex items-center justify-center text-2xl font-bold text-white shadow-lg cursor-pointer border-2 border-white"
               onClick={() => !uploadingAvatar && fileInputRef.current?.click()}
-              title="Nhấn để đổi ảnh đại diện"
+              title="Change avatar"
             >
               {uploadingAvatar ? (
                 <Loader2 size={28} className="animate-spin text-white" />
-              ) : dp?.avatarUrl ? (
-                <img src={dp.avatarUrl} alt={dp.fullName} className="w-full h-full object-cover" />
               ) : (
-                dp?.fullName?.charAt(0)?.toUpperCase() || '?'
+                <Avatar name={displayProfile?.fullName} src={displayProfile?.avatarUrl} className="!h-full !w-full !rounded-2xl !text-2xl" />
               )}
-            </div>
-            {/* Hover overlay */}
+            </button>
             {!uploadingAvatar && (
-              <div
+              <button
+                type="button"
                 className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Camera size={20} className="text-white" />
-              </div>
+              </button>
             )}
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleAvatarUpload(e.target.files[0])}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e.target.files[0])} />
           </div>
 
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{dp?.fullName}</h2>
-            <p className="text-sm text-gray-500">{dp?.email}</p>
+            <h2 className="text-xl font-bold text-gray-900">{displayProfile?.fullName}</h2>
+            <p className="text-sm text-gray-500">{displayProfile?.email}</p>
             <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
-              {dp?.role}
+              {displayProfile?.role}
             </span>
           </div>
         </div>
         <p className="relative mt-3 text-xs text-gray-400">
-          Nhấn vào ảnh để thay đổi ảnh đại diện • PNG, JPG, WebP tối đa 5 MB
+          Click the avatar to upload PNG, JPG, or WebP up to 5 MB.
         </p>
-      </div>
+      </Card>
 
-      {/* Personal info form */}
-      <div className="card p-5 mb-5">
+      <Card className="p-5 mb-5">
         <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
           <User size={15} className="text-gray-400" />
-          Thông tin cá nhân
+          Personal information
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">Họ và tên</label>
-            <input type="text" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">Số điện thoại</label>
-            <input type="text" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          </div>
+          <Input label="Full name" type="text" required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+          <Input label="Phone" type="text" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </div>
         <div className="mt-4 flex justify-end">
-          <button onClick={handleSave} disabled={saving} className="btn-primary">
-            <Save size={14} /> {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
-          </button>
+          <Button onClick={handleSave} disabled={saving}>
+            <Save size={14} /> {saving ? 'Saving...' : 'Save changes'}
+          </Button>
         </div>
-      </div>
+      </Card>
 
-      {/* Security */}
-      <div className="card p-5">
+      <Card className="p-5">
         <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
           <Lock size={15} className="text-gray-400" />
-          Bảo mật
+          Security
         </h3>
         {!showPasswordForm ? (
-          <button onClick={() => setShowPasswordForm(true)} className="btn-secondary">
-            <Lock size={14} /> Đổi mật khẩu
-          </button>
+          <Button variant="secondary" onClick={() => setShowPasswordForm(true)}>
+            <Lock size={14} /> Change password
+          </Button>
         ) : (
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Mật khẩu mới</label>
-              <input type="password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ newPassword: e.target.value })} placeholder="Nhập mật khẩu mới" />
-            </div>
-            <button onClick={handleChangePassword} className="btn-primary">Cập nhật</button>
-            <button onClick={() => setShowPasswordForm(false)} className="btn-secondary">Huỷ</button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Input className="flex-1" label="New password" type="password" minLength={6} value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ newPassword: e.target.value })} placeholder="Enter a new password" />
+            <Button onClick={handleChangePassword}>Update</Button>
+            <Button variant="secondary" onClick={() => setShowPasswordForm(false)}>Cancel</Button>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

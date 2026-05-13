@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { courseApi } from '../../api/courseApi';
 import { statsApi } from '../../api/statsApi';
 import CourseStatsPanel from '../../components/stats/CourseStatsPanel';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import { useAuth } from '../../contexts/AuthContext';
-import { useToast } from '../../contexts/ToastContext';
+import PageHeader from '../../components/ui/PageHeader';
+import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function TeachingAnalytics() {
 	const { user } = useAuth();
@@ -15,17 +17,7 @@ export default function TeachingAnalytics() {
 	const [loading, setLoading] = useState(true);
 	const [courseLoading, setCourseLoading] = useState(false);
 
-	useEffect(() => {
-		loadCourses();
-	}, [user?.id]);
-
-	useEffect(() => {
-		if (selectedCourseId) {
-			loadCourseStats(selectedCourseId);
-		}
-	}, [selectedCourseId]);
-
-	const loadCourses = async () => {
+	const loadCourses = useCallback(async () => {
 		setLoading(true);
 		try {
 			const res = await courseApi.getAll({ size: 1000 });
@@ -38,13 +30,13 @@ export default function TeachingAnalytics() {
 				setCourseStats(null);
 			}
 		} catch (error) {
-			toast.error(error.response?.data?.message || 'Failed to load courses');
+			toast.error(getApiErrorMessage(error, 'Failed to load courses'));
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [toast, user?.id]);
 
-	const loadCourseStats = async (courseId) => {
+	const loadCourseStats = useCallback(async (courseId) => {
 		setCourseLoading(true);
 		try {
 			const [overviewRes, completionRes, submissionRes, scoreRes, attendanceRes] = await Promise.all([
@@ -62,20 +54,27 @@ export default function TeachingAnalytics() {
 				attendance: attendanceRes.data || [],
 			});
 		} catch (error) {
-			toast.error(error.response?.data?.message || 'Failed to load teaching analytics');
+			toast.error(getApiErrorMessage(error, 'Failed to load teaching analytics'));
 		} finally {
 			setCourseLoading(false);
 		}
-	};
+	}, [toast]);
+
+	useEffect(() => {
+		loadCourses();
+	}, [loadCourses]);
+
+	useEffect(() => {
+		if (selectedCourseId) {
+			loadCourseStats(selectedCourseId);
+		}
+	}, [loadCourseStats, selectedCourseId]);
 
 	if (loading) return <LoadingSpinner text="Loading analytics..." />;
 
 	return (
 		<div className="space-y-6 animate-fade-in">
-			<div className="card p-6">
-				<h2 className="text-xl font-bold text-gray-900 mb-1">Teaching Analytics</h2>
-				<p className="text-sm text-gray-500">Track progress, submissions, score spread, and attendance for your courses.</p>
-			</div>
+			<PageHeader title="Teaching Analytics" description="Track progress, submissions, score spread, and attendance for your courses." />
 
 			<CourseStatsPanel
 				title="Teaching analytics"

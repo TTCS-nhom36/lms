@@ -16,6 +16,7 @@ import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.QuizAttemptMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
+import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.QuestionOptionRepository;
 import com.ttcs.backend.repository.QuestionRepository;
 import com.ttcs.backend.repository.QuizAttemptRepository;
@@ -44,6 +45,8 @@ public class QuizAttemptService {
     private final QuestionRepository questionRepository;
     private final QuestionOptionRepository questionOptionRepository;
     private final QuizAttemptMapper quizAttemptMapper;
+    private final EnrollmentRepository enrollmentRepository;
+    private final CurrentUserService currentUserService;
     //
 //
     public QuizAttemptService(
@@ -54,7 +57,9 @@ public class QuizAttemptService {
             QuestionRepository questionRepository,
             QuestionOptionRepository questionOptionRepository,
             //QuizAttemptMapper quizAttemptMapper) {
-            QuizAttemptMapper quizAttemptMapper) {
+            QuizAttemptMapper quizAttemptMapper,
+            EnrollmentRepository enrollmentRepository,
+            CurrentUserService currentUserService) {
         this.quizAttemptRepository = quizAttemptRepository;
         this.selectedAnswerRepository = selectedAnswerRepository;
         this.assignmentRepository = assignmentRepository;
@@ -62,6 +67,8 @@ public class QuizAttemptService {
         this.questionRepository = questionRepository;
         this.questionOptionRepository = questionOptionRepository;
         this.quizAttemptMapper = quizAttemptMapper;
+        this.enrollmentRepository = enrollmentRepository;
+        this.currentUserService = currentUserService;
         //
     }
 
@@ -71,16 +78,14 @@ public class QuizAttemptService {
         }
         Assignment assignment = assignmentRepository.findById(request.getAssignmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + request.getAssignmentId()));
+        assertStudentCanAccessAssignment(assignment, request.getUserId());
 
         User user = userRepository.findById(request.getUserId())
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + request.getUserId()));
 
-        // If attempt already exists, delete it and create a fresh one (retry)
         quizAttemptRepository.findByUserIdAndAssignmentId(request.getUserId(), request.getAssignmentId())
                 .ifPresent(existing -> {
-                    selectedAnswerRepository.deleteAll(selectedAnswerRepository.findByQuizAttemptId(existing.getId()));
-                    quizAttemptRepository.delete(existing);
-                    quizAttemptRepository.flush();
+                    throw new AppException(ErrorCode.BAD_REQUEST, "This quiz can only be attempted once");
                 });
 
         QuizAttempt attempt = QuizAttempt.builder()
@@ -97,6 +102,7 @@ public class QuizAttemptService {
                         request.getStudentId(), request.getQuizId())
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND,
                         "No attempt found for user " + request.getStudentId() + " and assignment " + request.getQuizId()));
+        assertAttemptVisibleToCurrentUser(attempt, request.getStudentId());
 
         // Clear any previous answers for this attempt (in case of re-submit)
         List<SelectedAnswer> existingAnswers = selectedAnswerRepository.findByQuizAttemptId(attempt.getId());
@@ -147,8 +153,23 @@ public class QuizAttemptService {
 
     @Transactional(readOnly = true)
     public SubmitQuizResponse getAttemptResult(Long attemptId) {
+        return getAttemptResult(attemptId, currentUserService.getCurrentUserId());
+    }
+
+    @Transactional(readOnly = true)
+    public SubmitQuizResponse getMyAttempt(Long assignmentId, UUID userId) {
+        QuizAttempt attempt = quizAttemptRepository.findByUserIdAndAssignmentId(userId, assignmentId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "No attempt found for this assignment"));
+        
+        // Return the result of the attempt
+        return getAttemptResult(attempt.getId(), userId);
+    }
+
+    @Transactional(readOnly = true)
+    public SubmitQuizResponse getAttemptResult(Long attemptId, UUID requesterId) {
         QuizAttempt attempt = quizAttemptRepository.findById(attemptId)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Attempt not found: " + attemptId));
+        assertAttemptVisibleToCurrentUser(attempt, requesterId);
 
         List<SelectedAnswer> selectedAnswers = selectedAnswerRepository.findByQuizAttemptId(attemptId);
 
@@ -172,13 +193,35 @@ public class QuizAttemptService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
-    public SubmitQuizResponse getMyAttempt(Long assignmentId, UUID userId) {
-        QuizAttempt attempt = quizAttemptRepository.findByUserIdAndAssignmentId(userId, assignmentId)
-                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "No attempt found for this assignment"));
-        
-        // Return the result of the attempt
-        return getAttemptResult(attempt.getId());
+    private void assertStudentCanAccessAssignment(Assignment assignment, UUID userId) {
+        if (assignment == null || assignment.getCourse() == null || userId == null) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
+        }
+        boolean enrolled = enrollmentRepository.findAll().stream()
+                .anyMatch(enrollment -> enrollment.getUser() != null
+                        && userId.equals(enrollment.getUser().getId())
+                        && enrollment.getCourse() != null
+                        && assignment.getCourse().getId().equals(enrollment.getCourse().getId()));
+        if (!enrolled) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
+        }
+    }
+
+    private void assertAttemptVisibleToCurrentUser(QuizAttempt attempt, UUID requesterId) {
+        if (attempt.getUser() != null && requesterId != null && requesterId.equals(attempt.getUser().getId())) {
+            return;
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        if (currentUserService.hasRole("INSTRUCTOR")
+                && attempt.getAssignment() != null
+                && attempt.getAssignment().getCourse() != null
+                && attempt.getAssignment().getCourse().getCreatedBy() != null
+                && requesterId.equals(attempt.getAssignment().getCourse().getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to view this attempt");
     }
 
         private ScoreSummary calculateScoreSummary(Long assignmentId, List<SelectedAnswer> selectedAnswers) {

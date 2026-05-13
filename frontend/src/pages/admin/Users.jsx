@@ -1,13 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { userApi } from '../../api/userApi';
-import { useToast } from '../../contexts/ToastContext';
+import { useToast } from '../../hooks/useToast';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { getApiErrorMessage } from '../../utils/apiError';
+import { firstError, validateUserForm } from '../../utils/validation';
 import Modal from '../../components/ui/Modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import StatusBadge from '../../components/ui/StatusBadge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
 import Pagination from '../../components/ui/Pagination';
-import { Plus, Search, Edit, Trash2, Users as UsersIcon } from 'lucide-react';
+import PageHeader from '../../components/ui/PageHeader';
+import SearchInput from '../../components/ui/SearchInput';
+import Button from '../../components/ui/Button';
+import Dropdown from '../../components/ui/Dropdown';
+import Input from '../../components/ui/Input';
+import UsersTable from '../../components/users/UsersTable';
+import { Plus, Users as UsersIcon } from 'lucide-react';
 
 export default function AdminUsers() {
   const toast = useToast();
@@ -17,6 +25,7 @@ export default function AdminUsers() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [roleFilter, setRoleFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState(null);
@@ -25,136 +34,95 @@ export default function AdminUsers() {
   const [form, setForm] = useState({
     email: '', passwordHash: '', fullName: '', phone: '', avatarUrl: '', role: 'STUDENT', isActive: true,
   });
+  const [formErrors, setFormErrors] = useState({});
 
-  useEffect(() => { loadUsers(); }, [page, search, roleFilter]);
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const params = { page, size: 10 };
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (roleFilter) params.role = roleFilter;
       const res = await userApi.getAll(params);
       setUsers(res.data.items || []);
       setTotalPages(res.data.totalPages || 0);
       setTotalElements(res.data.totalElements || 0);
-    } catch { toast.error('Failed to load users'); }
+    } catch (error) { toast.error(getApiErrorMessage(error, 'Failed to load users')); }
     finally { setLoading(false); }
-  };
+  }, [debouncedSearch, page, roleFilter, toast]);
+
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
   const handleCreate = () => {
     setEditUser(null);
     setForm({ email: '', passwordHash: '', fullName: '', phone: '', avatarUrl: '', role: 'STUDENT', isActive: true });
+    setFormErrors({});
     setShowModal(true);
   };
 
   const handleEdit = (u) => {
     setEditUser(u);
     setForm({ email: u.email, passwordHash: '', fullName: u.fullName || '', phone: u.phone || '', avatarUrl: u.avatarUrl || '', role: u.role, isActive: u.isActive });
+    setFormErrors({});
     setShowModal(true);
   };
 
   const handleSave = async () => {
+    const errors = validateUserForm(form, { editing: Boolean(editUser) });
+    setFormErrors(errors);
+    if (Object.keys(errors).length) {
+      toast.error(firstError(errors));
+      return;
+    }
     try {
       if (editUser) { await userApi.update(editUser.id, form); toast.success('User updated'); }
       else { await userApi.create(form); toast.success('User created'); }
       setShowModal(false);
       loadUsers();
-    } catch { toast.error('Failed to save user'); }
+    } catch (error) { toast.error(getApiErrorMessage(error, 'Failed to save user')); }
   };
 
   const handleDelete = async () => {
     try { await userApi.delete(deleteId); toast.success('User deactivated'); setShowConfirm(false); loadUsers(); }
-    catch { toast.error('Failed to deactivate user'); }
+    catch (error) { toast.error(getApiErrorMessage(error, 'Failed to deactivate user')); }
   };
 
   if (loading) return <LoadingSpinner text="Loading users..." />;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="section-display text-[#1d1d1f]">Users</h2>
-        <p className="body-primary text-[#6e6e73]">{totalElements} Total</p>
-      </div>
+      <PageHeader title="Users" description={`${totalElements} total users`} />
 
       {/* Utilities Container */}
       <div className="apple-card p-4 flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 min-w-[280px]">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#86868b]" />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            className="!pl-11 !py-2.5 !bg-[#f5f5f7] !border-none focus:!ring-2 focus:!ring-[#0071e3] transition-shadow"
-          />
-        </div>
-        <select
+        <SearchInput
+          value={search}
+          placeholder="Search by name or email..."
+          className="flex-1 min-w-[280px]"
+          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+        />
+        <Dropdown
           value={roleFilter}
-          onChange={(e) => { setRoleFilter(e.target.value); setPage(0); }}
-          className="w-40 !py-2.5 !bg-[#f5f5f7] !border-none focus:!ring-2 focus:!ring-[#0071e3] transition-shadow"
-        >
-          <option value="">All Roles</option>
-          <option value="ADMIN">Admin</option>
-          <option value="INSTRUCTOR">Instructor</option>
-          <option value="STUDENT">Student</option>
-        </select>
-        <button onClick={handleCreate} className="btn-primary !py-2.5">
+          placeholder="All Roles"
+          options={[
+            { value: 'ADMIN', label: 'Admin' },
+            { value: 'INSTRUCTOR', label: 'Instructor' },
+            { value: 'STUDENT', label: 'Student' },
+          ]}
+          onChange={(role) => { setRoleFilter(role); setPage(0); }}
+          className="w-40"
+        />
+        <Button onClick={handleCreate} className="!py-2.5">
           <Plus size={16} /> Add User
-        </button>
+        </Button>
       </div>
 
       {/* Table */}
       {users.length === 0 ? (
         <EmptyState icon={UsersIcon} title="No users found" description="Try adjusting your search or filters." />
-      ) : (
-        <div className="apple-table-card">
-          <div className="overflow-x-auto">
-            <table className="min-w-[800px] table-fixed">
-              <thead>
-                <tr>
-                  <th className="!pl-8 w-[38%]">User profile</th>
-                  <th className="w-[18%]">Roles & Identity</th>
-                  <th className="w-[16%]">System Status</th>
-                  <th className="w-[16%]">Date Added</th>
-                  <th className="text-right !pr-8 w-[12%]">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="align-middle">
-                    <td className="!pl-8 align-middle">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-[#f5f5f7] border border-[#d2d2d7] flex items-center justify-center text-[#1d1d1f] font-semibold">
-                          {u.fullName?.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="body-emphasis text-[#1d1d1f] mb-0.5">{u.fullName}</div>
-                          <div className="control-label text-[#86868b]">{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="align-middle"><StatusBadge status={u.role} size="sm" /></td>
-                    <td className="align-middle"><StatusBadge status={u.isActive} size="sm" /></td>
-                    <td className="control-label text-[#6e6e73] align-middle whitespace-nowrap">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="!pr-8 align-middle">
-                      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                        <button onClick={() => handleEdit(u)} className="w-8 h-8 rounded-full flex items-center justify-center text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#0071e3] transition-colors" title="Edit">
-                          <Edit size={16} />
-                        </button>
-                        <button onClick={() => { setDeleteId(u.id); setShowConfirm(true); }} className="w-8 h-8 rounded-full flex items-center justify-center text-[#86868b] hover:bg-[#fef2f2] hover:text-[#e30000] transition-colors" title="Deactivate">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      ) : (        <UsersTable
+          users={users}
+          onEdit={handleEdit}
+          onDeactivate={(userId) => { setDeleteId(userId); setShowConfirm(true); }}
+        />
       )}
 
       {/* Pagination */}
@@ -163,57 +131,41 @@ export default function AdminUsers() {
       {/* Modals */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editUser ? 'Edit User Profile' : 'Create New User'} size="md">
         <div className="space-y-5">
-          <div>
-            <label className="control-label block mb-2 text-[#6e6e73]">Email Address</label>
-            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </div>
+          <Input label="Email Address" type="email" required error={formErrors.email} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           {!editUser && (
-            <div>
-              <label className="control-label block mb-2 text-[#6e6e73]">Secure Password</label>
-              <input type="password" value={form.passwordHash} onChange={(e) => setForm({ ...form, passwordHash: e.target.value })} />
-            </div>
+            <Input label="Secure Password" type="password" required minLength={6} error={formErrors.passwordHash} value={form.passwordHash} onChange={(e) => setForm({ ...form, passwordHash: e.target.value })} />
           )}
           {editUser && (
-            <div>
-              <label className="control-label block mb-2 text-[#6e6e73]">New Password</label>
-              <input
-                type="password"
-                placeholder="Leave blank to keep current password"
-                value={form.passwordHash}
-                onChange={(e) => setForm({ ...form, passwordHash: e.target.value })}
-              />
-            </div>
+            <Input label="New Password" type="password" minLength={6} error={formErrors.passwordHash} placeholder="Leave blank to keep current password" value={form.passwordHash} onChange={(e) => setForm({ ...form, passwordHash: e.target.value })} />
           )}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="control-label block mb-2 text-[#6e6e73]">Full Name</label>
-              <input type="text" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
-            </div>
-            <div>
-              <label className="control-label block mb-2 text-[#6e6e73]">Contact Phone</label>
-              <input type="text" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Full Name" type="text" required error={formErrors.fullName} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+            <Input label="Contact Phone" type="text" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="control-label block mb-2 text-[#6e6e73]">System Role</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                <option value="ADMIN">Administrator</option>
-                <option value="INSTRUCTOR">Instructor</option>
-                <option value="STUDENT">Student</option>
-              </select>
-            </div>
-            <div>
-              <label className="control-label block mb-2 text-[#6e6e73]">Account Status</label>
-              <select value={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.value === 'true' })}>
-                <option value="true">Active Access</option>
-                <option value="false">Inactive</option>
-              </select>
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Dropdown
+              label="System Role"
+              value={form.role}
+              options={[
+                { value: 'ADMIN', label: 'Administrator' },
+                { value: 'INSTRUCTOR', label: 'Instructor' },
+                { value: 'STUDENT', label: 'Student' },
+              ]}
+              onChange={(role) => setForm({ ...form, role })}
+            />
+            <Dropdown
+              label="Account Status"
+              value={String(form.isActive)}
+              options={[
+                { value: 'true', label: 'Active Access' },
+                { value: 'false', label: 'Inactive' },
+              ]}
+              onChange={(isActive) => setForm({ ...form, isActive: isActive === 'true' })}
+            />
           </div>
           <div className="flex justify-end gap-3 pt-6">
-            <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleSave} className="btn-primary">Save User</button>
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button onClick={handleSave}>Save User</Button>
           </div>
         </div>
       </Modal>
@@ -222,3 +174,4 @@ export default function AdminUsers() {
     </div>
   );
 }
+

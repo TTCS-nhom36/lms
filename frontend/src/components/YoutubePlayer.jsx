@@ -99,7 +99,9 @@ const YoutubePlayer = forwardRef(function YoutubePlayer(
 
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
-      try { playerRef.current?.destroy?.(); } catch {}
+      try { playerRef.current?.destroy?.(); } catch {
+        // YouTube player teardown can fail if the iframe was already removed.
+      }
       playerRef.current = null;
       readyRef.current = false;
     };

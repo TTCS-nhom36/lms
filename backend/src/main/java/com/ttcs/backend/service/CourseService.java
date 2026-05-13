@@ -57,8 +57,9 @@ public class CourseService {
     private final ChapterMapper chapterMapper;
     private final EnrollmentMapper enrollmentMapper;
     private final UserMapper userMapper;
+    private final CurrentUserService currentUserService;
 
-    public CourseService(CourseRepository courseRepository, UserRepository userRepository, ChapterRepository chapterRepository, EnrollmentRepository enrollmentRepository, AssignmentRepository assignmentRepository, SubmissionRepository submissionRepository, LessonRepository lessonRepository, LessonProgressRepository lessonProgressRepository, CourseMapper courseMapper, ChapterMapper chapterMapper, EnrollmentMapper enrollmentMapper, UserMapper userMapper) {
+    public CourseService(CourseRepository courseRepository, UserRepository userRepository, ChapterRepository chapterRepository, EnrollmentRepository enrollmentRepository, AssignmentRepository assignmentRepository, SubmissionRepository submissionRepository, LessonRepository lessonRepository, LessonProgressRepository lessonProgressRepository, CourseMapper courseMapper, ChapterMapper chapterMapper, EnrollmentMapper enrollmentMapper, UserMapper userMapper, CurrentUserService currentUserService) {
         this.courseRepository = courseRepository;
         this.userRepository = userRepository;
         this.chapterRepository = chapterRepository;
@@ -71,6 +72,7 @@ public class CourseService {
         this.chapterMapper = chapterMapper;
         this.enrollmentMapper = enrollmentMapper;
         this.userMapper = userMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -116,16 +118,21 @@ public class CourseService {
 
     public CourseResponse update(Long id, CreateCourseRequest request) {
         Course course = findCourseEntityById(id);
+        assertCanManageCourse(course);
         course.setTitle(request.getTitle());
         course.setDescription(request.getDescription());
         course.setThumbnailUrl(request.getThumbnailUrl());
         course.setStatus(request.getStatus());
-        course.setCreatedBy(findUserEntityById(request.getCreatedById()));
+        if (currentUserService.hasRole("ADMIN") && request.getCreatedById() != null) {
+            course.setCreatedBy(findUserEntityById(request.getCreatedById()));
+        }
         return courseMapper.toResponse(courseRepository.save(course));
     }
 
     public void delete(Long id) {
-        courseRepository.deleteById(id);
+        Course course = findCourseEntityById(id);
+        assertCanManageCourse(course);
+        courseRepository.delete(course);
     }
 
     public CourseResponse archive(Long id) {
@@ -136,12 +143,36 @@ public class CourseService {
 
     public CourseResponse publish(Long id) {
         Course course = findCourseEntityById(id);
+        assertCanManageCourse(course);
         course.setStatus(CourseStatus.PUBLISHED);
         return courseMapper.toResponse(courseRepository.save(course));
     }
 
     public EnrollmentResponse enroll(Long courseId, UUID userId) {
         Course course = findCourseEntityById(courseId);
+        return enrollIntoCourse(course, userId);
+    }
+
+    public EnrollmentResponse enrollStudent(Long courseId, UUID userId) {
+        Course course = findCourseEntityById(courseId);
+        assertCanManageCourse(course);
+        return enrollIntoCourse(course, userId);
+    }
+
+    public void unenrollStudent(Long courseId, UUID userId) {
+        Course course = findCourseEntityById(courseId);
+        assertCanManageCourse(course);
+        Enrollment enrollment = enrollmentRepository.findAll().stream()
+                .filter(item -> item.getCourse() != null && courseId.equals(item.getCourse().getId()))
+                .filter(item -> item.getUser() != null && userId.equals(item.getUser().getId()))
+                .findFirst()
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Enrollment not found"));
+        enrollment.setStatus(EnrollmentStatus.DROPPED);
+        enrollmentRepository.save(enrollment);
+    }
+
+    private EnrollmentResponse enrollIntoCourse(Course course, UUID userId) {
+        Long courseId = course.getId();
         User user = findUserEntityById(userId);
         Enrollment existingEnrollment = enrollmentRepository.findAll().stream()
                 .filter(enrollment -> enrollment.getCourse() != null && courseId.equals(enrollment.getCourse().getId()))
@@ -163,8 +194,10 @@ public class CourseService {
 
     @Transactional(readOnly = true)
     public List<UserResponse> findStudents(Long courseId) {
+        assertCanManageCourse(findCourseEntityById(courseId));
         return enrollmentRepository.findAll().stream()
                 .filter(enrollment -> enrollment.getCourse() != null && courseId.equals(enrollment.getCourse().getId()))
+                .filter(enrollment -> enrollment.getStatus() != EnrollmentStatus.DROPPED)
                 .map(Enrollment::getUser)
                 .distinct()
                 .map(userMapper::toResponse)
@@ -204,6 +237,7 @@ public class CourseService {
     @Transactional(readOnly = true)
     public GradebookResponse findGradebook(Long courseId) {
         Course course = findCourseEntityById(courseId);
+        assertCanManageCourse(course);
         List<Assignment> assignments = assignmentRepository.findAll().stream()
                 .filter(assignment -> assignment.getCourse() != null && courseId.equals(assignment.getCourse().getId()))
                 .toList();
@@ -266,6 +300,17 @@ public class CourseService {
             throw new AppException(ErrorCode.BAD_REQUEST, "createdById is required");
         }
         return findUserEntityById(id);
+    }
+
+    private void assertCanManageCourse(Course course) {
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        UUID currentUserId = currentUserService.getCurrentUserId();
+        if (course.getCreatedBy() != null && currentUserId.equals(course.getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this course");
     }
 
     private boolean matchesSearch(Course course, String search) {

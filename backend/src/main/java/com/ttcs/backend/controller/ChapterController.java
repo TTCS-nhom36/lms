@@ -4,8 +4,10 @@ import com.ttcs.backend.dto.request.ChapterReorderRequest;
 import com.ttcs.backend.dto.request.CreateChapterRequest;
 import com.ttcs.backend.dto.response.ChapterResponse;
 import com.ttcs.backend.service.ChapterService;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,22 +33,26 @@ public class ChapterController {
     }
 
     @PostMapping("/api/lms/courses/{courseId}/chapters")
-    public ResponseEntity<ChapterResponse> create(@PathVariable Long courseId, @RequestBody CreateChapterRequest request) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<ChapterResponse> create(@PathVariable Long courseId, @Valid @RequestBody CreateChapterRequest request) {
         return ResponseEntity.ok(chapterService.createForCourse(courseId, request));
     }
 
     @PutMapping("/api/lms/chapters/{id}")
-    public ResponseEntity<ChapterResponse> update(@PathVariable Long id, @RequestBody CreateChapterRequest request) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<ChapterResponse> update(@PathVariable Long id, @Valid @RequestBody CreateChapterRequest request) {
         return ResponseEntity.ok(chapterService.update(id, request));
     }
 
     @DeleteMapping("/api/lms/chapters/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         chapterService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/api/lms/chapters/reorder")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<List<ChapterResponse>> reorder(@RequestBody ChapterReorderRequest request) {
         Long courseId = request != null && request.getChapterIds() != null && !request.getChapterIds().isEmpty()
                 ? chapterService.findById(request.getChapterIds().get(0)).getCourseId()
