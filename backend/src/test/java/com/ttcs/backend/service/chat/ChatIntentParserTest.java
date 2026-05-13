@@ -17,6 +17,14 @@ class ChatIntentParserTest {
     }
 
     @Test
+    void parsesVietnameseQuestionWithLetterDStroke() {
+        ChatIntentAnalysis intent = parser.parse("Điểm quiz của tôi là bao nhiêu?");
+
+        assertTrue(intent.has(ChatIntentAnalysis.Type.GRADE));
+        assertTrue(intent.has(ChatIntentAnalysis.Type.ASSIGNMENT));
+    }
+
+    @Test
     void parsesVietnameseQuestionWithoutAccents() {
         ChatIntentAnalysis intent = parser.parse("Diem quiz cua toi la bao nhieu?");
 

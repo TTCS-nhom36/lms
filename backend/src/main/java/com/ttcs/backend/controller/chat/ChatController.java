@@ -3,6 +3,7 @@ package com.ttcs.backend.controller.chat;
 import com.ttcs.backend.dto.request.ChatRequest;
 import com.ttcs.backend.dto.response.ChatMessageResponse;
 import com.ttcs.backend.service.chat.ChatService;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +17,7 @@ public class ChatController {
     private final ChatService chatService;
 
     @PostMapping
-    public ResponseEntity<ChatMessageResponse> sendMessage(@RequestBody ChatRequest request) {
+    public ResponseEntity<ChatMessageResponse> sendMessage(@Valid @RequestBody ChatRequest request) {
         return ResponseEntity.ok(chatService.sendMessage(request.getMessage()));
     }
 

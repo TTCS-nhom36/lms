@@ -1,7 +1,7 @@
 import { Outlet, Navigate } from 'react-router-dom';
 import TopBar from './TopBar';
 import ChatWidget from '../chat/ChatWidget';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function MainLayout() {
   const { user } = useAuth();

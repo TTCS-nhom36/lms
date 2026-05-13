@@ -1,25 +1,30 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { Sparkles, Layers3, ArrowRight, Lock, Mail, User, Phone } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Lock, Mail, Phone, User } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
+import AuthCard from '../components/auth/AuthCard';
+import AuthError from '../components/auth/AuthError';
+import AuthField from '../components/auth/AuthField';
+import AuthShell from '../components/auth/AuthShell';
+import AuthSubmitButton from '../components/auth/AuthSubmitButton';
 
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
-    passwordHash: '', // Maps to 'password' field conceptually
+    passwordHash: '',
     role: 'STUDENT',
-    isActive: true
+    isActive: true,
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError('');
     setLoading(true);
     try {
@@ -32,115 +37,34 @@ export default function Register() {
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = (event) => {
+    setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
   };
 
   return (
-    <div className="min-h-screen px-5 py-6 lg:px-10 lg:py-8 flex items-center justify-center">
-      <div className="w-full max-w-md">
-        <section className="card px-5 py-5 lg:px-6 lg:py-6 animate-slide-up">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <div className="section-kicker mb-2">New account</div>
-              <h2 className="card-title">Sign up</h2>
-            </div>
-            <div className="w-11 h-11 rounded-2xl bg-[color:var(--app-accent-soft)] text-[color:var(--app-accent)] flex items-center justify-center">
-              <Layers3 size={18} />
-            </div>
+    <AuthShell>
+      <AuthCard kicker="New account" title="Sign up">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <AuthError message={error} />
+
+          <AuthField label="Full Name" type="text" name="fullName" required value={formData.fullName} onChange={handleChange} placeholder="John Doe" />
+          <AuthField label="Email address" type="email" name="email" required value={formData.email} onChange={handleChange} placeholder="name@example.com" />
+          <AuthField label="Password" type="password" name="passwordHash" required minLength={6} value={formData.passwordHash} onChange={handleChange} placeholder="********" />
+
+          <AuthSubmitButton loading={loading} loadingText="Creating account...">
+            Create account
+          </AuthSubmitButton>
+
+          <div className="text-center mt-4">
+            <p className="text-sm text-[color:var(--app-text-soft)]">
+              Already have an account?{' '}
+              <Link to="/login" className="font-medium text-[color:var(--app-accent)] hover:underline">
+                Sign in
+              </Link>
+            </p>
           </div>
-
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
-                {error}
-              </div>
-            )}
-            
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                <User size={16} className="text-[color:var(--app-text-soft)]" />
-                Full Name
-              </label>
-              <input
-                type="text"
-                name="fullName"
-                required
-                value={formData.fullName}
-                onChange={handleChange}
-                className="app-input w-full"
-                placeholder="John Doe"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                <Mail size={16} className="text-[color:var(--app-text-soft)]" />
-                Email address
-              </label>
-              <input
-                type="email"
-                name="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="app-input w-full"
-                placeholder="name@example.com"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                <Phone size={16} className="text-[color:var(--app-text-soft)]" />
-                Phone Number (Optional)
-              </label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                className="app-input w-full"
-                placeholder="+1 234 567 8900"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-[color:var(--app-text)] flex items-center gap-2">
-                <Lock size={16} className="text-[color:var(--app-text-soft)]" />
-                Password
-              </label>
-              <input
-                type="password"
-                name="passwordHash"
-                required
-                minLength={6}
-                value={formData.passwordHash}
-                onChange={handleChange}
-                className="app-input w-full"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full justify-center mt-2"
-            >
-              {loading ? 'Creating account...' : 'Create account'}
-              {!loading && <ArrowRight size={18} />}
-            </button>
-            
-            <div className="text-center mt-4">
-              <p className="text-sm text-[color:var(--app-text-soft)]">
-                Already have an account?{' '}
-                <Link to="/login" className="font-medium text-[color:var(--app-accent)] hover:underline">
-                  Sign in
-                </Link>
-              </p>
-            </div>
-          </form>
-        </section>
-      </div>
-    </div>
+        </form>
+      </AuthCard>
+    </AuthShell>
   );
 }

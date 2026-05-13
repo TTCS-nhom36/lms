@@ -2,6 +2,9 @@ spring:
   application:
     name: backend
 
+  jackson:
+    time-zone: Asia/Ho_Chi_Minh
+
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/lms

@@ -128,21 +128,11 @@ public class ChatService {
             return "";
         }
         String normalized = value.toLowerCase(Locale.ROOT);
-        normalized = stripVietnameseDiacritics(normalized);
         String decomposed = Normalizer.normalize(normalized, Normalizer.Form.NFD);
         return decomposed.replaceAll("\\p{M}", "")
+                .replace('đ', 'd')
                 .replaceAll("\\s+", " ")
                 .trim();
-    }
-
-    private String stripVietnameseDiacritics(String value) {
-        return value.replaceAll("[àáạảãâầấậẩẫăằắặẳẵ]", "a")
-                .replaceAll("[èéẹẻẽêềếệểễ]", "e")
-                .replaceAll("[ìíịỉĩ]", "i")
-                .replaceAll("[òóọỏõôồốộổỗơờớợởỡ]", "o")
-                .replaceAll("[ùúụủũưừứựửữ]", "u")
-                .replaceAll("[ỳýỵỷỹ]", "y")
-                .replace('đ', 'd');
     }
 
     private boolean containsAny(String value, String... keywords) {

@@ -1,9 +1,9 @@
 package com.ttcs.backend.service.chat;
 
+import com.ttcs.backend.service.chat.model.ChatIntentAnalysis;
 import java.text.Normalizer;
 import java.util.EnumSet;
 import java.util.Locale;
-import com.ttcs.backend.service.chat.model.ChatIntentAnalysis;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -47,21 +47,11 @@ public class ChatIntentParser {
             return "";
         }
         String normalized = value.toLowerCase(Locale.ROOT);
-        normalized = stripVietnameseDiacritics(normalized);
         String decomposed = Normalizer.normalize(normalized, Normalizer.Form.NFD);
         return decomposed.replaceAll("\\p{M}", "")
+                .replace('đ', 'd')
                 .replaceAll("\\s+", " ")
                 .trim();
-    }
-
-    private String stripVietnameseDiacritics(String value) {
-        return value.replaceAll("[àáạảãâầấậẩẫăằắặẳẵ]", "a")
-                .replaceAll("[èéẹẻẽêềếệểễ]", "e")
-                .replaceAll("[ìíịỉĩ]", "i")
-                .replaceAll("[òóọỏõôồốộổỗơờớợởỡ]", "o")
-                .replaceAll("[ùúụủũưừứựửữ]", "u")
-                .replaceAll("[ỳýỵỷỹ]", "y")
-                .replace('đ', 'd');
     }
 
     private boolean containsAny(String value, String... keywords) {

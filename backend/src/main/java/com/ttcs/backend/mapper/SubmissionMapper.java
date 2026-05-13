@@ -19,6 +19,7 @@ public class SubmissionMapper {
         return SubmissionResponse.builder()
                 .id(submission.getId())
                 .assignmentId(submission.getAssignment() != null ? submission.getAssignment().getId() : null)
+                .quizAttemptId(submission.getQuizAttempt() != null ? submission.getQuizAttempt().getId() : null)
                 .userId(submission.getUser() != null ? submission.getUser().getId() : null)
                 .submittedAt(submission.getSubmittedAt())
                 .isLate(submission.getIsLate())
@@ -44,6 +45,10 @@ public class SubmissionMapper {
                 .isLate(request.getIsLate())
                 .fileUrl(request.getFileUrl())
                 .linkUrl(request.getLinkUrl())
+                .autoScore(request.getAutoScore())
+                .manualScore(request.getManualScore())
+                .finalScore(request.getFinalScore())
+                .feedback(request.getFeedback())
                 .build();
     }
 
