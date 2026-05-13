@@ -1,12 +1,16 @@
 package com.ttcs.backend.controller;
 
 import com.ttcs.backend.dto.request.GradeSubmissionRequest;
+import com.ttcs.backend.dto.request.SubmitRequest;
 import com.ttcs.backend.dto.response.SubmissionResponse;
 import com.ttcs.backend.service.CurrentUserService;
 import com.ttcs.backend.service.SubmissionService;
+import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,7 +31,33 @@ public class SubmissionController {
         this.currentUserService = currentUserService;
     }
 
+    @GetMapping("/api/lms/submissions/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<SubmissionResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(submissionService.findManagedById(id));
+    }
+
+    @PostMapping("/api/lms/submissions")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<SubmissionResponse> create(@Valid @RequestBody SubmitRequest request) {
+        return ResponseEntity.ok(submissionService.createManaged(request));
+    }
+
+    @PutMapping("/api/lms/submissions/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<SubmissionResponse> update(@PathVariable Long id, @Valid @RequestBody SubmitRequest request) {
+        return ResponseEntity.ok(submissionService.update(id, request));
+    }
+
+    @DeleteMapping("/api/lms/submissions/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        submissionService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/api/lms/submissions/{id}/grade")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<SubmissionResponse> grade(@PathVariable Long id, @RequestBody GradeSubmissionRequest request) {
         var gradedById = currentUserService.getCurrentUserId();
         return ResponseEntity.ok(submissionService.grade(id, request, gradedById));

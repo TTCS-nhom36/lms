@@ -1,5 +1,6 @@
 package com.ttcs.backend.dto.request;
 
+import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,6 +15,8 @@ import lombok.Setter;
 @AllArgsConstructor
 public class CreateAttemptRequest {
 
+    @NotNull(message = "assignmentId is required")
     private Long assignmentId;
+
     private UUID userId;
 }

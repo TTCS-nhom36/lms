@@ -12,6 +12,7 @@ import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.UserMapper;
 import com.ttcs.backend.repository.UserRepository;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Comparator;
@@ -30,12 +31,14 @@ public class UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final S3Service s3Service;
+    private final CurrentUserService currentUserService;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, S3Service s3Service) {
+    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, S3Service s3Service, CurrentUserService currentUserService) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.s3Service = s3Service;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -71,6 +74,18 @@ public class UserService {
             throw new AppException(ErrorCode.BAD_REQUEST, "Email đã tồn tại");
         }
         User user = userMapper.toEntity(request);
+        if (!currentUserService.isAuthenticated()) {
+            user.setRole(UserRole.STUDENT);
+            user.setIsActive(true);
+        } else if (!currentUserService.hasRole("ADMIN")) {
+            throw new AccessDeniedException("Only admins can create users while authenticated");
+        }
+        if (user.getRole() == null) {
+            user.setRole(UserRole.STUDENT);
+        }
+        if (user.getIsActive() == null) {
+            user.setIsActive(true);
+        }
         user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
         return userMapper.toResponse(userRepository.save(user));
     }
@@ -110,7 +125,7 @@ public class UserService {
             throw new AppException(ErrorCode.BAD_REQUEST, "newPassword is required");
         }
         User user = findUserEntityById(id);
-        user.setPasswordHash(request.getNewPassword());
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
     }
 

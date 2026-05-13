@@ -24,12 +24,14 @@ public class QuestionService {
     private final AssignmentRepository assignmentRepository;
     private final QuestionMapper questionMapper;
     private final QuestionOptionMapper questionOptionMapper;
+    private final CurrentUserService currentUserService;
 
-    public QuestionService(QuestionRepository questionRepository, AssignmentRepository assignmentRepository, QuestionMapper questionMapper, QuestionOptionMapper questionOptionMapper) {
+    public QuestionService(QuestionRepository questionRepository, AssignmentRepository assignmentRepository, QuestionMapper questionMapper, QuestionOptionMapper questionOptionMapper, CurrentUserService currentUserService) {
         this.questionRepository = questionRepository;
         this.assignmentRepository = assignmentRepository;
         this.questionMapper = questionMapper;
         this.questionOptionMapper = questionOptionMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -50,6 +52,7 @@ public class QuestionService {
 
     public QuestionResponse update(Long id, CreateQuestionRequest request) {
         Question question = findQuestionEntityById(id);
+        assertCanManageAssignment(question.getAssignment());
         question.setContent(request.getContent());
         question.setType(request.getType());
         question.setOrderIndex(request.getOrderIndex());
@@ -71,7 +74,9 @@ public class QuestionService {
     }
 
     public void delete(Long id) {
-        questionRepository.delete(findQuestionEntityById(id));
+        Question question = findQuestionEntityById(id);
+        assertCanManageAssignment(question.getAssignment());
+        questionRepository.delete(question);
     }
 
     private Question findQuestionEntityById(Long id) {
@@ -82,5 +87,19 @@ public class QuestionService {
     private Assignment findAssignmentById(Long id) {
         return assignmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Assignment not found: " + id));
+    }
+
+    private void assertCanManageAssignment(Assignment assignment) {
+        if (assignment == null || assignment.getCourse() == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Assignment not found");
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        java.util.UUID currentUserId = currentUserService.getCurrentUserId();
+        if (assignment.getCourse().getCreatedBy() != null && currentUserId.equals(assignment.getCourse().getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this question");
     }
 }

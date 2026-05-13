@@ -1,5 +1,6 @@
 package com.ttcs.backend.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,9 +16,20 @@ import lombok.Setter;
 public class SubmitRequest {
 
     private Long assignmentId;
+
     private UUID userId;
     private Boolean isLate;
     private String fileUrl;
     private String linkUrl;
+
+    @DecimalMin(value = "0.0", message = "autoScore must not be negative")
     private java.math.BigDecimal autoScore;
+
+    @DecimalMin(value = "0.0", message = "manualScore must not be negative")
+    private java.math.BigDecimal manualScore;
+
+    @DecimalMin(value = "0.0", message = "finalScore must not be negative")
+    private java.math.BigDecimal finalScore;
+
+    private String feedback;
 }

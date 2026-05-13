@@ -1,67 +1,43 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { courseApi } from '../api/courseApi';
 import { lessonApi } from '../api/lessonApi';
-import { useToast } from '../contexts/ToastContext';
+import LessonContent from '../components/lesson/LessonContent';
+import LessonHeader from '../components/lesson/LessonHeader';
+import LessonOutline from '../components/lesson/LessonOutline';
+import { extractYoutubeId } from '../components/lesson/lessonUtils';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import StatusBadge from '../components/ui/StatusBadge';
-import YoutubePlayer from '../components/YoutubePlayer';
-import {
-  ArrowLeft, Video, FileText, Link as LinkIcon,
-  CheckCircle, ExternalLink, Clock, BookOpen, Timer, Download,
-} from 'lucide-react';
-
-// Estimate lesson "length" for progress bar (seconds). Used only for non-video content.
-const ESTIMATED_READING_SECS = 600; // 10 min default
-
-function formatDuration(secs) {
-  if (!secs || secs < 0) return '0s';
-  if (secs < 60) return `${secs}s`;
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
-}
-
-/** Extract YouTube video ID from a watch or short URL */
-function extractYoutubeId(url) {
-  if (!url) return null;
-  if (url.includes('youtube.com/watch?v=')) {
-    try { return new URL(url).searchParams.get('v'); } catch { return null; }
-  }
-  if (url.includes('youtu.be/')) {
-    return url.split('youtu.be/')[1]?.split('?')[0] ?? null;
-  }
-  if (url.includes('youtube.com/embed/')) {
-    return url.split('/embed/')[1]?.split('?')[0] ?? null;
-  }
-  return null;
-}
+import Button from '../components/ui/Button';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { ArrowLeft, CheckCircle } from 'lucide-react';
 
 export default function LessonViewer() {
   const { courseId, lessonId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { isAdmin, isInstructor, isStudent } = useAuth();
+  const courseBasePath = isAdmin ? '/admin' : isInstructor ? '/instructor' : '/student';
 
-  // Core state
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [completing, setCompleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [documentUrl, setDocumentUrl] = useState(null);
-
-  // Progress state
+  const [outline, setOutline] = useState([]);
+  const [outlineLoading, setOutlineLoading] = useState(true);
   const [progress, setProgress] = useState({ isCompleted: false, watchDurationSecs: 0 });
   const [videoDurationSecs, setVideoDurationSecs] = useState(null);
 
-  // Refs to avoid stale closures in intervals/callbacks
   const watchSecsRef = useRef(0);
   const lessonIdRef = useRef(lessonId);
   const isCompletedRef = useRef(false);
   const syncTimerRef = useRef(null);
   const tickTimerRef = useRef(null);
-  const videoRef = useRef(null);       // <video> for HTML5
-  const ytPlayerRef = useRef(null);    // YoutubePlayer imperative ref
+  const videoRef = useRef(null);
+  const ytPlayerRef = useRef(null);
 
-  // Keep refs in sync with state
   useEffect(() => {
     watchSecsRef.current = progress.watchDurationSecs;
     isCompletedRef.current = progress.isCompleted;
@@ -71,16 +47,7 @@ export default function LessonViewer() {
     lessonIdRef.current = lessonId;
   }, [lessonId]);
 
-  // ─── Load lesson ──────────────────────────────────────────────────
-  useEffect(() => {
-    setLesson(null);
-    setLoading(true);
-    setProgress({ isCompleted: false, watchDurationSecs: 0 });
-    setVideoDurationSecs(null);
-    loadLesson();
-  }, [lessonId]);
-
-  const loadLesson = async () => {
+  const loadLesson = useCallback(async () => {
     try {
       const res = await lessonApi.getById(lessonId);
       const data = res.data;
@@ -92,7 +59,6 @@ export default function LessonViewer() {
       setProgress(initial);
       watchSecsRef.current = initial.watchDurationSecs;
       isCompletedRef.current = initial.isCompleted;
-      // Fetch presigned URL for DOCUMENT lessons
       if (data.contentType === 'DOCUMENT' && data.contentUrl) {
         try {
           const urlRes = await lessonApi.getDocumentUrl(data.id);
@@ -102,23 +68,64 @@ export default function LessonViewer() {
         }
       }
     } catch {
-      toast.error('Không thể tải bài học');
+      setLoadError('Could not load this lesson. Please try again.');
+      toast.error('Could not load lesson');
     } finally {
       setLoading(false);
     }
-  };
+  }, [lessonId, toast]);
 
-  // ─── Sync progress to backend ────────────────────────────────────
+  const loadOutline = useCallback(async () => {
+    try {
+      setOutlineLoading(true);
+      const res = await courseApi.getById(courseId);
+      const courseChapters = res.data.chapters || [];
+      const chaptersWithLessons = await Promise.all(
+        courseChapters
+          .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+          .map(async (chapter) => {
+            try {
+              const lessonsRes = await lessonApi.getByChapter(chapter.id);
+              return {
+                ...chapter,
+                lessons: (lessonsRes.data || []).sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)),
+              };
+            } catch {
+              return { ...chapter, lessons: [] };
+            }
+          })
+      );
+      setOutline(chaptersWithLessons);
+    } catch {
+      setOutline([]);
+    } finally {
+      setOutlineLoading(false);
+    }
+  }, [courseId]);
+
+  useEffect(() => {
+    if (!lessonId) return;
+    setLesson(null);
+    setLoading(true);
+    setLoadError(null);
+    setProgress({ isCompleted: false, watchDurationSecs: 0 });
+    setVideoDurationSecs(null);
+    setDocumentUrl(null);
+    loadLesson();
+  }, [lessonId, loadLesson]);
+
+  useEffect(() => {
+    if (!courseId) return;
+    loadOutline();
+  }, [courseId, loadOutline]);
+
   const syncToBackend = useCallback(async (overrideCompleted = null) => {
     const currentId = lessonIdRef.current;
     const secs = watchSecsRef.current;
     const completed = overrideCompleted !== null ? overrideCompleted : isCompletedRef.current;
     try {
       setSyncing(true);
-      await lessonApi.updateProgress(currentId, {
-        watchDurationSecs: secs,
-        isCompleted: completed,
-      });
+      await lessonApi.updateProgress(currentId, { watchDurationSecs: secs, isCompleted: completed });
     } catch (err) {
       console.warn('[LessonViewer] Sync failed:', err?.response?.status, err?.message);
     } finally {
@@ -126,13 +133,12 @@ export default function LessonViewer() {
     }
   }, []);
 
-  // ─── Tick timer (1s) — for non-video / HTML5 video ───────────────
   const startTickTimer = useCallback(() => {
     if (tickTimerRef.current) clearInterval(tickTimerRef.current);
     tickTimerRef.current = setInterval(() => {
       if (!isCompletedRef.current) {
         watchSecsRef.current += 1;
-        setProgress(prev => ({ ...prev, watchDurationSecs: prev.watchDurationSecs + 1 }));
+        setProgress((prev) => ({ ...prev, watchDurationSecs: prev.watchDurationSecs + 1 }));
       }
     }, 1000);
   }, []);
@@ -144,7 +150,6 @@ export default function LessonViewer() {
     }
   }, []);
 
-  // ─── Periodic background sync (every 30s) ────────────────────────
   const startSyncTimer = useCallback(() => {
     if (syncTimerRef.current) clearInterval(syncTimerRef.current);
     syncTimerRef.current = setInterval(() => {
@@ -159,90 +164,71 @@ export default function LessonViewer() {
     }
   }, []);
 
-  // ─── Start/stop tracking when lesson changes ───────────────────────
   useEffect(() => {
-    if (!lesson || progress.isCompleted) return;
+    if (!isStudent || !lesson || progress.isCompleted) return;
 
     const isYoutube = lesson.contentType === 'VIDEO' && extractYoutubeId(lesson.contentUrl);
     const isHtml5Video = lesson.contentType === 'VIDEO' && lesson.contentUrl && !isYoutube;
 
-    // YouTube: YoutubePlayer component handles its own tick via onTimeUpdate callback
-    // HTML5 video: onTimeUpdate event on <video> handles tick
-    // Everything else: interval tick
-    if (!isYoutube && !isHtml5Video) {
-      startTickTimer();
-    }
+    if (!isYoutube && !isHtml5Video) startTickTimer();
     startSyncTimer();
 
     return () => {
       stopTickTimer();
       stopSyncTimer();
-      // Save progress on unmount (navigate away without completing)
-      if (!isCompletedRef.current) {
-        syncToBackend();
-      }
+      if (!isCompletedRef.current) syncToBackend();
     };
-  }, [lesson?.id, progress.isCompleted]);
+  }, [lesson, progress.isCompleted, isStudent, startSyncTimer, startTickTimer, stopSyncTimer, stopTickTimer, syncToBackend]);
 
-  // ─── YouTube callbacks ────────────────────────────────────────────
-
-  /** Called every second while YouTube video is playing */
-  const handleYoutubeTimeUpdate = useCallback((currentSecs) => {
-    if (isCompletedRef.current) return;
-    // Only advance forward (ignore seeking backward)
-    if (currentSecs > watchSecsRef.current) {
-      watchSecsRef.current = currentSecs;
-      setProgress(prev => ({ ...prev, watchDurationSecs: currentSecs }));
-    }
-  }, []);
-
-  /** Called when YouTube player is ready — read duration and set it */
-  const handleYoutubeReady = useCallback((player) => {
-    const dur = Math.floor(player.getDuration?.() ?? 0);
-    if (dur > 0) setVideoDurationSecs(dur);
-  }, []);
-
-  /**
-   * Called when YouTube video finishes playing.
-   * Automatically marks the lesson as complete.
-   */
-  const handleYoutubeEnded = useCallback(async () => {
-    if (isCompletedRef.current) return;
-
-    // Set watchDuration to full video length
-    const dur = ytPlayerRef.current?.getDuration?.() ?? watchSecsRef.current;
-    watchSecsRef.current = Math.floor(dur);
-    setProgress(prev => ({ ...prev, watchDurationSecs: Math.floor(dur) }));
-
-    // Mark complete
+  const completeLesson = useCallback(async (watchDurationSecs) => {
     setCompleting(true);
     try {
       const res = await lessonApi.complete(lessonIdRef.current);
       const data = res.data;
       setProgress({
         isCompleted: true,
-        watchDurationSecs: data?.watchDurationSecs ?? Math.floor(dur),
+        watchDurationSecs: data?.watchDurationSecs ?? watchDurationSecs,
       });
       isCompletedRef.current = true;
       stopTickTimer();
       stopSyncTimer();
-      toast.success('🎉 Hoàn thành bài học!');
+      toast.success('Lesson completed!');
     } catch (err) {
       console.error(err);
-      toast.error('Không thể đánh dấu hoàn thành');
+      toast.error('Could not mark lesson as completed');
     } finally {
       setCompleting(false);
     }
-  }, [stopTickTimer, stopSyncTimer]);
+  }, [stopSyncTimer, stopTickTimer, toast]);
 
-  // ─── HTML5 video callbacks ────────────────────────────────────────
+  const handleYoutubeTimeUpdate = useCallback((currentSecs) => {
+    if (isCompletedRef.current) return;
+    if (currentSecs > watchSecsRef.current) {
+      watchSecsRef.current = currentSecs;
+      setProgress((prev) => ({ ...prev, watchDurationSecs: currentSecs }));
+    }
+  }, []);
+
+  const handleYoutubeReady = useCallback((player) => {
+    const duration = Math.floor(player.getDuration?.() ?? 0);
+    if (duration > 0) setVideoDurationSecs(duration);
+  }, []);
+
+  const handleYoutubeEnded = useCallback(async () => {
+    if (!isStudent || isCompletedRef.current) return;
+    const duration = Math.floor(ytPlayerRef.current?.getDuration?.() ?? watchSecsRef.current);
+    watchSecsRef.current = duration;
+    setProgress((prev) => ({ ...prev, watchDurationSecs: duration }));
+    await completeLesson(duration);
+  }, [completeLesson, isStudent]);
+
   const handleVideoTimeUpdate = useCallback(() => {
     const video = videoRef.current;
     if (!video || isCompletedRef.current) return;
     const currentSecs = Math.floor(video.currentTime);
     if (currentSecs > watchSecsRef.current) {
       watchSecsRef.current = currentSecs;
-      setProgress(prev => ({ ...prev, watchDurationSecs: currentSecs }));
+      setProgress((prev) => ({ ...prev, watchDurationSecs: currentSecs }));
     }
     if (video.duration && !videoDurationSecs) {
       setVideoDurationSecs(Math.floor(video.duration));
@@ -259,302 +245,139 @@ export default function LessonViewer() {
     }
   }, []);
 
-  /** HTML5 video ended → auto-complete */
   const handleVideoEnded = useCallback(async () => {
-    if (isCompletedRef.current) return;
-    const dur = videoDurationSecs ?? watchSecsRef.current;
-    watchSecsRef.current = dur;
-    setProgress(prev => ({ ...prev, watchDurationSecs: dur }));
+    if (!isStudent || isCompletedRef.current) return;
+    const duration = videoDurationSecs ?? watchSecsRef.current;
+    watchSecsRef.current = duration;
+    setProgress((prev) => ({ ...prev, watchDurationSecs: duration }));
+    await completeLesson(duration);
+  }, [completeLesson, isStudent, videoDurationSecs]);
 
-    setCompleting(true);
-    try {
-      const res = await lessonApi.complete(lessonIdRef.current);
-      const data = res.data;
-      setProgress({ isCompleted: true, watchDurationSecs: data?.watchDurationSecs ?? dur });
-      isCompletedRef.current = true;
-      stopTickTimer();
-      stopSyncTimer();
-      toast.success('🎉 Hoàn thành bài học!');
-    } catch (err) {
-      console.error(err);
-      toast.error('Không thể đánh dấu hoàn thành');
-    } finally {
-      setCompleting(false);
-    }
-  }, [videoDurationSecs, stopTickTimer, stopSyncTimer]);
-
-  // ─── Manual complete (non-video content) ─────────────────────────
   const handleComplete = async () => {
-    setCompleting(true);
-    try {
-      const res = await lessonApi.complete(lessonId);
-      const data = res.data;
-      setProgress({
-        isCompleted: true,
-        watchDurationSecs: data?.watchDurationSecs ?? watchSecsRef.current,
-      });
-      watchSecsRef.current = data?.watchDurationSecs ?? watchSecsRef.current;
-      isCompletedRef.current = true;
-      stopTickTimer();
-      stopSyncTimer();
-      toast.success('🎉 Hoàn thành bài học!');
-    } catch (err) {
-      toast.error('Không thể đánh dấu hoàn thành');
-      console.error(err);
-    } finally {
-      setCompleting(false);
-    }
+    if (!isStudent) return;
+    await completeLesson(watchSecsRef.current);
   };
 
-  // ─── Manual save progress ─────────────────────────────────────────
   const handleSaveProgress = async () => {
+    if (!isStudent) return;
     try {
       setSyncing(true);
       await lessonApi.updateProgress(lessonId, {
         watchDurationSecs: watchSecsRef.current,
         isCompleted: isCompletedRef.current,
       });
-      toast.success('Đã lưu tiến độ');
+      toast.success('Progress saved');
     } catch {
-      toast.error('Không thể lưu tiến độ');
+      toast.error('Could not save progress');
     } finally {
       setSyncing(false);
     }
   };
 
-  // ─── Helpers ──────────────────────────────────────────────────────
-  const getProgressPercent = () => {
-    if (progress.isCompleted) return 100;
-    const duration = videoDurationSecs || ESTIMATED_READING_SECS;
-    return Math.min(99, Math.round((progress.watchDurationSecs / duration) * 100));
-  };
+  if (loading) return <LoadingSpinner text="Loading lesson..." />;
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 text-center shadow-sm">
+        <p className="text-sm text-neutral-500">{loadError}</p>
+        <Button onClick={loadLesson} className="mt-4">Try again</Button>
+      </div>
+    );
+  }
+  if (!lesson) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 text-center shadow-sm">
+        <p className="text-sm text-neutral-500">No lesson data available.</p>
+        <Button onClick={loadLesson} className="mt-4">Try again</Button>
+      </div>
+    );
+  }
 
-  // Is this lesson a YouTube video?
   const isYoutube = lesson?.contentType === 'VIDEO' && !!extractYoutubeId(lesson?.contentUrl);
   const isVideoLesson = lesson?.contentType === 'VIDEO';
-
-  // ─── Content render ───────────────────────────────────────────────
-  const renderContent = () => {
-    switch (lesson.contentType) {
-      case 'VIDEO': {
-        const youtubeId = extractYoutubeId(lesson.contentUrl);
-        if (!lesson.contentUrl) {
-          return (
-            <div className="aspect-video glass-card flex flex-col items-center justify-center gap-3 text-neutral-400">
-              <Video size={48} className="opacity-40" />
-              <span className="text-sm">Chưa có video</span>
-            </div>
-          );
-        }
-        if (youtubeId) {
-          return (
-            <YoutubePlayer
-              ref={ytPlayerRef}
-              videoId={youtubeId}
-              startSeconds={progress.watchDurationSecs}
-              onReady={handleYoutubeReady}
-              onEnded={handleYoutubeEnded}
-              onTimeUpdate={handleYoutubeTimeUpdate}
-            />
-          );
-        }
-        // HTML5 video (non-YouTube)
-        return (
-          <div className="rounded-xl overflow-hidden shadow-lg border border-neutral-200 bg-black">
-            <video
-              ref={videoRef}
-              src={lesson.contentUrl}
-              controls
-              className="w-full max-h-[480px]"
-              onTimeUpdate={handleVideoTimeUpdate}
-              onLoadedMetadata={handleVideoLoadedMetadata}
-              onEnded={handleVideoEnded}
-            />
-          </div>
-        );
-      }
-
-      case 'DOCUMENT':
-      case 'NOTEBOOK':
-        return (
-          <div className="glass-card p-6 space-y-4">
-            {lesson.contentType === 'DOCUMENT' && (
-              documentUrl ? (
-                <a
-                  href={documentUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  download
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#0071e3] text-white font-semibold text-sm hover:bg-[#0077ed] transition-colors shadow-sm"
-                >
-                  <Download size={18} /> Tải tài liệu về
-                </a>
-              ) : lesson.contentUrl ? (
-                <p className="text-sm text-neutral-400">Đang tải liên kết tài liệu...</p>
-              ) : (
-                <p className="text-neutral-400 text-sm">Chưa có tài liệu đính kèm.</p>
-              )
-            )}
-            {lesson.contentType === 'NOTEBOOK' && lesson.contentUrl && (
-              <a
-                href={lesson.contentUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors font-medium text-sm"
-              >
-                <ExternalLink size={16} /> Mở Notebook
-              </a>
-            )}
-            {lesson.contentText && (
-              <div className="text-neutral-700 text-sm leading-relaxed whitespace-pre-wrap">
-                {lesson.contentText}
-              </div>
-            )}
-            {!lesson.contentUrl && !lesson.contentText && (
-              <p className="text-neutral-400 text-sm">Chưa có nội dung tài liệu.</p>
-            )}
-          </div>
-        );
-
-      case 'LINK':
-        return (
-          <div className="glass-card p-10 flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center">
-              <LinkIcon size={32} className="text-cyan-500" />
-            </div>
-            <p className="text-neutral-500 text-sm">Tài nguyên bên ngoài</p>
-            <a
-              href={lesson.contentUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-primary !bg-gradient-to-r !from-cyan-500 !to-blue-600"
-            >
-              <ExternalLink size={16} /> Mở liên kết
-            </a>
-            {lesson.contentUrl && (
-              <p className="text-xs text-neutral-400 break-all max-w-md text-center">{lesson.contentUrl}</p>
-            )}
-          </div>
-        );
-
-      case 'TEXT':
-      default:
-        return (
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <BookOpen size={16} className="text-primary-500" />
-              <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Nội dung bài học</span>
-            </div>
-            <div className="text-neutral-700 text-sm leading-relaxed whitespace-pre-wrap">
-              {lesson.contentText || 'Chưa có nội dung.'}
-            </div>
-          </div>
-        );
-    }
-  };
-
-  // ─── Render ───────────────────────────────────────────────────────
-  if (loading) return <LoadingSpinner text="Đang tải bài học..." />;
-  if (!lesson) return null;
-
-  const percent = getProgressPercent();
+  const flatLessons = outline.flatMap((chapter, chapterIndex) =>
+    (chapter.lessons || []).map((item, lessonIndex) => ({ ...item, chapter, chapterIndex, lessonIndex }))
+  );
+  const currentLessonIndex = flatLessons.findIndex((item) => String(item.id) === String(lessonId));
+  const currentLessonMeta = currentLessonIndex >= 0 ? flatLessons[currentLessonIndex] : null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
-      {/* Back nav */}
-      <button
-        onClick={() => navigate(`/student/courses/${courseId}`)}
-        className="flex items-center gap-2 text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer group"
-      >
-        <ArrowLeft size={18} className="group-hover:-translate-x-0.5 transition-transform" />
-        <span className="text-sm font-medium">Quay lại khóa học</span>
-      </button>
+    <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 animate-fade-in lg:grid-cols-[300px_minmax(0,1fr)]">
+      <aside className="hidden lg:block lg:sticky lg:top-6 lg:self-start">
+        <LessonOutline
+          outline={outline}
+          outlineLoading={outlineLoading}
+          lessonId={lessonId}
+          currentLessonIndex={currentLessonIndex}
+          totalLessons={flatLessons.length}
+          courseBasePath={courseBasePath}
+          courseId={courseId}
+          onNavigate={navigate}
+        />
+      </aside>
 
-      {/* Header card */}
-      <div className="glass-card p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <StatusBadge status={lesson.contentType} size="sm" />
-              {lesson.isFreePreview && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600">
-                  FREE PREVIEW
-                </span>
-              )}
-              {syncing && (
-                <span className="text-[10px] text-neutral-400 flex items-center gap-1">
-                  <span className="animate-spin inline-block w-2.5 h-2.5 border border-neutral-300 border-t-primary-500 rounded-full" />
-                  Đang lưu...
-                </span>
-              )}
+      <main className="space-y-5">
+        <Button
+          variant="ghost"
+          onClick={() => navigate(`${courseBasePath}/courses/${courseId}`)}
+          className="!px-0 text-neutral-500 hover:text-neutral-900 hover:bg-transparent group"
+        >
+          <ArrowLeft size={18} className="group-hover:-translate-x-0.5 transition-transform" />
+          <span className="text-sm font-medium">Back to course</span>
+        </Button>
+
+        {currentLessonMeta && (
+          <div className="rounded-2xl border border-white/70 bg-white p-4 shadow-sm lg:hidden">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary-500">
+              Chapter {currentLessonMeta.chapterIndex + 1}
+            </p>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <p className="min-w-0 truncate text-sm font-semibold text-neutral-900">{currentLessonMeta.chapter.title}</p>
+              <span className="flex-shrink-0 text-xs text-neutral-400">
+                {currentLessonIndex + 1}/{flatLessons.length}
+              </span>
             </div>
-            <h1 className="text-xl font-bold text-neutral-900">{lesson.title}</h1>
           </div>
+        )}
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+        <LessonHeader
+          lesson={lesson}
+          isStudent={isStudent}
+          isVideoLesson={isVideoLesson}
+          progress={progress}
+          syncing={syncing}
+          completing={completing}
+          onSaveProgress={handleSaveProgress}
+          onComplete={handleComplete}
+        />
 
-            {/* For YouTube/HTML5 video: hide manual complete button (auto-complete on ended).
-                For other content types: show the manual complete button. */}
-            {!isVideoLesson && (
-              <button
-                onClick={handleComplete}
-                disabled={completing || progress.isCompleted}
-                className={`btn-primary !px-4 !py-2 text-sm transition-all ${
-                  progress.isCompleted
-                    ? '!bg-emerald-500 opacity-80 cursor-default'
-                    : '!bg-gradient-to-r !from-emerald-500 !to-teal-600 hover:!shadow-emerald-500/30'
-                }`}
-              >
-                <CheckCircle size={15} />
-                {progress.isCompleted
-                  ? 'Đã hoàn thành'
-                  : completing
-                  ? 'Đang xử lý...'
-                  : 'Đánh dấu hoàn thành'}
-              </button>
-            )}
+        <LessonContent
+          lesson={lesson}
+          documentUrl={documentUrl}
+          progress={progress}
+          videoRef={videoRef}
+          youtubePlayerRef={ytPlayerRef}
+          onYoutubeReady={handleYoutubeReady}
+          onYoutubeEnded={handleYoutubeEnded}
+          onYoutubeTimeUpdate={handleYoutubeTimeUpdate}
+          onVideoTimeUpdate={handleVideoTimeUpdate}
+          onVideoLoadedMetadata={handleVideoLoadedMetadata}
+          onVideoEnded={handleVideoEnded}
+        />
 
-            {/* Video completed badge */}
-            {isVideoLesson && progress.isCompleted && (
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-600 text-sm font-semibold">
-                <CheckCircle size={15} />
-                Đã hoàn thành
-              </div>
-            )}
-
-            {/* Video: completing spinner */}
-            {isVideoLesson && completing && !progress.isCompleted && (
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-neutral-100 text-neutral-500 text-sm">
-                <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-neutral-300 border-t-primary-500 rounded-full" />
-                Đang xử lý...
-              </div>
-            )}
+        {isStudent && !progress.isCompleted && (
+          <p className="text-center text-xs text-neutral-400 pb-4">
+            {isYoutube || isVideoLesson
+              ? 'Watch the full video to complete the lesson. Progress is saved when you leave.'
+              : 'Progress is saved every 30 seconds. Use Save progress to save now.'}
+          </p>
+        )}
+        {isStudent && progress.isCompleted && (
+          <div className="flex items-center justify-center gap-2 pb-4 text-emerald-600 text-sm font-medium">
+            <CheckCircle size={16} />
+            You have completed this lesson.
           </div>
-        </div>
-
-
-      </div>
-
-      {/* Content */}
-      {renderContent()}
-
-      {/* Footer hint */}
-      {!progress.isCompleted && (
-        <p className="text-center text-xs text-neutral-400 pb-4">
-          {isYoutube
-            ? 'Xem hết video để tự động hoàn thành bài học • Tiến độ được lưu khi bạn thoát'
-            : isVideoLesson
-            ? 'Xem hết video để tự động hoàn thành bài học • Tiến độ được lưu khi bạn thoát'
-            : 'Tiến độ được tự động lưu mỗi 30 giây • Nhấn "Lưu tiến độ" để lưu ngay'}
-        </p>
-      )}
-      {progress.isCompleted && (
-        <div className="flex items-center justify-center gap-2 pb-4 text-emerald-600 text-sm font-medium">
-          <CheckCircle size={16} />
-          Bạn đã hoàn thành bài học này!
-        </div>
-      )}
+        )}
+      </main>
     </div>
   );
 }

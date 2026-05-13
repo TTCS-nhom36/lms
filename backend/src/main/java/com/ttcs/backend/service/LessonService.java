@@ -37,8 +37,9 @@ public class LessonService {
     private final LessonMapper lessonMapper;
     private final LessonProgressMapper lessonProgressMapper;
     private final S3Service s3Service;
+    private final CurrentUserService currentUserService;
 
-    public LessonService(LessonRepository lessonRepository, ChapterRepository chapterRepository, LessonProgressRepository lessonProgressRepository, EnrollmentRepository enrollmentRepository, UserRepository userRepository, LessonMapper lessonMapper, LessonProgressMapper lessonProgressMapper, S3Service s3Service) {
+    public LessonService(LessonRepository lessonRepository, ChapterRepository chapterRepository, LessonProgressRepository lessonProgressRepository, EnrollmentRepository enrollmentRepository, UserRepository userRepository, LessonMapper lessonMapper, LessonProgressMapper lessonProgressMapper, S3Service s3Service, CurrentUserService currentUserService) {
         this.lessonRepository = lessonRepository;
         this.chapterRepository = chapterRepository;
         this.lessonProgressRepository = lessonProgressRepository;
@@ -47,6 +48,7 @@ public class LessonService {
         this.lessonMapper = lessonMapper;
         this.lessonProgressMapper = lessonProgressMapper;
         this.s3Service = s3Service;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +78,7 @@ public class LessonService {
     @Transactional(readOnly = true)
     public LessonResponse findAccessibleById(Long id, UUID userId) {
         Lesson lesson = findLessonEntityById(id);
-        if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId)) {
+        if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId) || currentUserService.hasRole("ADMIN") || currentUserService.hasRole("INSTRUCTOR")) {
             LessonProgress progress = null;
             if (userId != null) {
                 progress = lessonProgressRepository.findByLessonIdAndUserId(id, userId).orElse(null);
@@ -87,8 +89,10 @@ public class LessonService {
     }
 
     public LessonResponse create(CreateLessonRequest request) {
+        Chapter chapter = findChapterById(request.getChapterId());
+        assertCanManageChapter(chapter);
         Lesson lesson = lessonMapper.toEntity(request);
-        lesson.setChapter(findChapterById(request.getChapterId()));
+        lesson.setChapter(chapter);
         if (request.getUnlockConditionId() != null) {
             lesson.setUnlockCondition(findLessonEntityById(request.getUnlockConditionId()));
         }
@@ -102,7 +106,10 @@ public class LessonService {
 
     public LessonResponse update(Long id, CreateLessonRequest request) {
         Lesson lesson = findLessonEntityById(id);
-        lesson.setChapter(findChapterById(request.getChapterId()));
+        assertCanManageLesson(lesson);
+        Chapter chapter = request.getChapterId() != null ? findChapterById(request.getChapterId()) : lesson.getChapter();
+        assertCanManageChapter(chapter);
+        lesson.setChapter(chapter);
         lesson.setTitle(request.getTitle());
         lesson.setContentType(request.getContentType());
         lesson.setContentUrl(request.getContentUrl());
@@ -114,7 +121,9 @@ public class LessonService {
     }
 
     public void delete(Long id) {
-        lessonRepository.delete(findLessonEntityById(id));
+        Lesson lesson = findLessonEntityById(id);
+        assertCanManageLesson(lesson);
+        lessonRepository.delete(lesson);
     }
 
     /**
@@ -165,6 +174,9 @@ public class LessonService {
 
     public LessonProgressResponse updateProgress(Long lessonId, UUID userId, UpdateLessonProgressRequest request) {
         Lesson lesson = findLessonEntityById(lessonId);
+        if (!Boolean.TRUE.equals(lesson.getIsFreePreview()) && !hasAccess(lesson, userId)) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Lesson requires enrollment");
+        }
         User user = findUserById(userId);
         LessonProgress lessonProgress = lessonProgressRepository.findByLessonIdAndUserId(lessonId, userId)
                 .orElseGet(LessonProgress::new);
@@ -215,5 +227,27 @@ public class LessonService {
                         && userId.equals(enrollment.getUser().getId())
                         && enrollment.getCourse() != null
                         && courseId.equals(enrollment.getCourse().getId()));
+    }
+
+    private void assertCanManageLesson(Lesson lesson) {
+        if (lesson == null || lesson.getChapter() == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Lesson not found");
+        }
+        assertCanManageChapter(lesson.getChapter());
+    }
+
+    private void assertCanManageChapter(Chapter chapter) {
+        if (chapter == null || chapter.getCourse() == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Chapter not found");
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        UUID currentUserId = currentUserService.getCurrentUserId();
+        if (chapter.getCourse().getCreatedBy() != null
+                && currentUserId.equals(chapter.getCourse().getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this course");
     }
 }

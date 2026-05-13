@@ -22,11 +22,13 @@ public class ChapterService {
     private final ChapterRepository chapterRepository;
     private final CourseRepository courseRepository;
     private final ChapterMapper chapterMapper;
+    private final CurrentUserService currentUserService;
 
-    public ChapterService(ChapterRepository chapterRepository, CourseRepository courseRepository, ChapterMapper chapterMapper) {
+    public ChapterService(ChapterRepository chapterRepository, CourseRepository courseRepository, ChapterMapper chapterMapper, CurrentUserService currentUserService) {
         this.chapterRepository = chapterRepository;
         this.courseRepository = courseRepository;
         this.chapterMapper = chapterMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -52,8 +54,9 @@ public class ChapterService {
 
     public ChapterResponse create(CreateChapterRequest request) {
         Chapter chapter = chapterMapper.toEntity(request);
-        chapter.setCourse(courseRepository.findById(request.getCourseId())
-                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + request.getCourseId())));
+        Course course = findCourseEntityById(request.getCourseId());
+        assertCanManageCourse(course);
+        chapter.setCourse(course);
         return chapterMapper.toResponse(chapterRepository.save(chapter));
     }
 
@@ -64,20 +67,25 @@ public class ChapterService {
 
     public ChapterResponse update(Long id, CreateChapterRequest request) {
         Chapter chapter = findChapterEntityById(id);
-        chapter.setCourse(courseRepository.findById(request.getCourseId())
-            .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + request.getCourseId())));
+        assertCanManageCourse(chapter.getCourse());
+        Course course = request.getCourseId() != null ? findCourseEntityById(request.getCourseId()) : chapter.getCourse();
+        assertCanManageCourse(course);
+        chapter.setCourse(course);
         chapter.setTitle(request.getTitle());
         chapter.setOrderIndex(request.getOrderIndex());
         return chapterMapper.toResponse(chapterRepository.save(chapter));
     }
 
     public void delete(Long id) {
-        chapterRepository.delete(findChapterEntityById(id));
+        Chapter chapter = findChapterEntityById(id);
+        assertCanManageCourse(chapter.getCourse());
+        chapterRepository.delete(chapter);
     }
 
     public List<ChapterResponse> reorder(Long courseId, ChapterReorderRequest request) {
         Course course = courseRepository.findById(courseId)
             .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + courseId));
+        assertCanManageCourse(course);
         List<Long> chapterIds = request != null && request.getChapterIds() != null ? request.getChapterIds() : List.of();
         List<Chapter> chapters = chapterRepository.findAll().stream()
                 .filter(chapter -> chapter.getCourse() != null && courseId.equals(chapter.getCourse().getId()))
@@ -98,5 +106,24 @@ public class ChapterService {
     private Chapter findChapterEntityById(Long id) {
         return chapterRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Chapter not found: " + id));
+    }
+
+    private Course findCourseEntityById(Long id) {
+        return courseRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + id));
+    }
+
+    private void assertCanManageCourse(Course course) {
+        if (course == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Course not found");
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        java.util.UUID currentUserId = currentUserService.getCurrentUserId();
+        if (course.getCreatedBy() != null && currentUserId.equals(course.getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this course");
     }
 }

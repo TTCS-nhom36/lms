@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -30,6 +31,7 @@ import com.ttcs.backend.mapper.EnrollmentMapper;
 import com.ttcs.backend.service.CourseService;
 import com.ttcs.backend.service.CurrentUserService;
 import com.ttcs.backend.service.S3Service;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/lms/courses")
@@ -63,33 +65,53 @@ public class CourseController {
     }
 
     @PostMapping
-    public ResponseEntity<CourseResponse> create(@RequestBody CreateCourseRequest request) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<CourseResponse> create(@Valid @RequestBody CreateCourseRequest request) {
+        request.setCreatedById(currentUserService.getCurrentUserId());
         return ResponseEntity.ok(courseService.create(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<CourseResponse> update(@PathVariable Long id, @RequestBody CreateCourseRequest request) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<CourseResponse> update(@PathVariable Long id, @Valid @RequestBody CreateCourseRequest request) {
         return ResponseEntity.ok(courseService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         courseService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/publish")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<CourseResponse> publish(@PathVariable Long id) {
         return ResponseEntity.ok(courseService.publish(id));
     }
 
     @PostMapping("/{id}/enroll")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<EnrollmentResponse> enroll(@PathVariable Long id) {
         var userId = currentUserService.getCurrentUserId();
         return ResponseEntity.ok(courseService.enroll(id, userId));
     }
 
+    @PostMapping("/{id}/students/{userId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<EnrollmentResponse> enrollStudent(@PathVariable Long id, @PathVariable java.util.UUID userId) {
+        return ResponseEntity.ok(courseService.enrollStudent(id, userId));
+    }
+
+    @DeleteMapping("/{id}/students/{userId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<Void> unenrollStudent(@PathVariable Long id, @PathVariable java.util.UUID userId) {
+        courseService.unenrollStudent(id, userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{id}/students")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<List<UserResponse>> getStudents(@PathVariable Long id) {
         return ResponseEntity.ok(courseService.findStudents(id));
     }
@@ -101,11 +123,13 @@ public class CourseController {
     }
 
     @GetMapping("/{id}/gradebook")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<GradebookResponse> getGradebook(@PathVariable Long id) {
         return ResponseEntity.ok(courseService.findGradebook(id));
     }
 
     @GetMapping(value = "/{id}/gradebook/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<byte[]> exportGradebook(@PathVariable Long id) {
         byte[] fileBytes = courseService.exportGradebook(id);
         return ResponseEntity.ok()
@@ -116,6 +140,7 @@ public class CourseController {
     }
 
     @PostMapping(value = "/upload-thumbnail", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<Map<String, String>> uploadThumbnail(@RequestParam("file") MultipartFile file) {
         String key = s3Service.uploadFile(file, "thumbnails");
         String url = s3Service.getFileUrl(key);

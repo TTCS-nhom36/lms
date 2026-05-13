@@ -1,42 +1,32 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { statsApi } from '../../api/statsApi';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import MetricCard from '../../components/ui/MetricCard';
+import CardGrid from '../../components/ui/CardGrid';
 import { BookOpen, GraduationCap, UserPlus, Users, ClipboardList, Award, BarChart3, CheckCircle2 } from 'lucide-react';
-import { useToast } from '../../contexts/ToastContext';
-
-function SummaryCard({ icon: Icon, label, value, hint, accent = 'bg-slate-50 text-slate-700' }) {
-  return (
-    <div className="card p-5 border border-gray-200 bg-white">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${accent}`}>
-        <Icon size={18} />
-      </div>
-      <div className="text-3xl font-bold text-gray-900">{value}</div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mt-1">{label}</div>
-      {hint ? <div className="text-[11px] text-gray-400 mt-1">{hint}</div> : null}
-    </div>
-  );
-}
+import { useToast } from '../../hooks/useToast';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function AdminDashboard() {
   const toast = useToast();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const summaryRes = await statsApi.getAdminSummary();
       setSummary(summaryRes.data);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to load admin statistics');
+      toast.error(getApiErrorMessage(error, 'Failed to load admin statistics'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const summaryCards = useMemo(() => ([
     { label: 'Total Users', value: summary?.totalUsers || 0, icon: Users, hint: `${summary?.activeUsers || 0} active accounts`, accent: 'bg-blue-50 text-blue-600' },
@@ -55,13 +45,13 @@ export default function AdminDashboard() {
     <div className="space-y-8 animate-fade-in pb-16">
       
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <CardGrid columns="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card, index) => (
           <div key={card.label} className="animate-slide-up" style={{ opacity: 0, animationDelay: `${index * 0.04}s` }}>
-            <SummaryCard {...card} />
+            <MetricCard {...card} />
           </div>
         ))}
-      </div>
+      </CardGrid>
     </div>
   );
 }

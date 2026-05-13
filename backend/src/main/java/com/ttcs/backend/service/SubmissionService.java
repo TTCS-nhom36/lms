@@ -34,14 +34,16 @@ public class SubmissionService {
     private final UserRepository userRepository;
     private final SubmissionMapper submissionMapper;
     private final S3Service s3Service;
+    private final CurrentUserService currentUserService;
 
-    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, QuizAttemptRepository quizAttemptRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service) {
+    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, QuizAttemptRepository quizAttemptRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service, CurrentUserService currentUserService) {
         this.submissionRepository = submissionRepository;
         this.assignmentRepository = assignmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.userRepository = userRepository;
         this.submissionMapper = submissionMapper;
         this.s3Service = s3Service;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -54,8 +56,25 @@ public class SubmissionService {
         return submissionMapper.toResponse(findSubmissionEntityById(id));
     }
 
+    @Transactional(readOnly = true)
+    public SubmissionResponse findManagedById(Long id) {
+        Submission submission = findSubmissionEntityById(id);
+        assertCanManageAssignment(submission.getAssignment());
+        return submissionMapper.toResponse(submission);
+    }
+
+    public SubmissionResponse createManaged(SubmitRequest request) {
+        Assignment assignment = findAssignmentById(request.getAssignmentId());
+        assertCanManageAssignment(assignment);
+        return createForAssignment(request, assignment);
+    }
+
     public SubmissionResponse create(SubmitRequest request) {
         Assignment assignment = findAssignmentById(request.getAssignmentId());
+        return createForAssignment(request, assignment);
+    }
+
+    private SubmissionResponse createForAssignment(SubmitRequest request, Assignment assignment) {
         User user = findUserById(request.getUserId());
 
         List<Submission> existing = submissionRepository
@@ -79,27 +98,42 @@ public class SubmissionService {
         BigDecimal newScore = request.getAutoScore();
         if (newScore != null) {
             submission.setAutoScore(newScore);
-            submission.setFinalScore(newScore);
         }
+        submission.setManualScore(request.getManualScore());
+        submission.setFeedback(request.getFeedback());
+        submission.setFinalScore(request.getFinalScore() != null ? request.getFinalScore() : resolveFinalScore(submission));
         return submissionMapper.toResponse(submissionRepository.save(submission));
     }
 
     public SubmissionResponse update(Long id, SubmitRequest request) {
         Submission submission = findSubmissionEntityById(id);
-        submission.setAssignment(findAssignmentById(request.getAssignmentId()));
+        assertCanManageAssignment(submission.getAssignment());
+        Assignment assignment = findAssignmentById(request.getAssignmentId());
+        assertCanManageAssignment(assignment);
+        submission.setAssignment(assignment);
         submission.setUser(findUserById(request.getUserId()));
         submission.setIsLate(request.getIsLate());
         submission.setFileUrl(request.getFileUrl());
         submission.setLinkUrl(request.getLinkUrl());
-        if (request.getAutoScore() != null) {
-            submission.setAutoScore(request.getAutoScore());
-            submission.setFinalScore(request.getAutoScore());
-        }
+        submission.setAutoScore(request.getAutoScore());
+        submission.setManualScore(request.getManualScore());
+        submission.setFeedback(request.getFeedback());
+        submission.setFinalScore(request.getFinalScore() != null ? request.getFinalScore() : resolveFinalScore(submission));
         return submissionMapper.toResponse(submissionRepository.save(submission));
     }
 
     public void delete(Long id) {
-        submissionRepository.delete(findSubmissionEntityById(id));
+        Submission submission = findSubmissionEntityById(id);
+        assertCanManageAssignment(submission.getAssignment());
+        submissionRepository.delete(submission);
+    }
+
+    public void deleteMySubmission(Long assignmentId, UUID userId) {
+        List<Submission> submissions = submissionRepository.findByUserIdAndAssignmentId(userId, assignmentId);
+        if (submissions.isEmpty()) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Submission not found for this user");
+        }
+        submissionRepository.deleteAll(submissions);
     }
 
     /**
@@ -135,11 +169,12 @@ public class SubmissionService {
 
     public SubmissionResponse grade(Long id, GradeSubmissionRequest request, UUID gradedById) {
         Submission submission = findSubmissionEntityById(id);
+        assertCanManageAssignment(submission.getAssignment());
         submission.setManualScore(request.getManualScore());
         submission.setFeedback(request.getFeedback());
         submission.setGradedBy(findUserById(gradedById));
         submission.setGradedAt(LocalDateTime.now());
-        submission.setFinalScore(resolveFinalScore(submission));
+        submission.setFinalScore(request.getFinalScore() != null ? request.getFinalScore() : resolveFinalScore(submission));
         return submissionMapper.toResponse(submissionRepository.save(submission));
     }
 
@@ -166,5 +201,19 @@ public class SubmissionService {
             return submission.getAutoScore();
         }
         return BigDecimal.ZERO;
+    }
+
+    private void assertCanManageAssignment(Assignment assignment) {
+        if (assignment == null || assignment.getCourse() == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Assignment not found");
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        UUID currentUserId = currentUserService.getCurrentUserId();
+        if (assignment.getCourse().getCreatedBy() != null && currentUserId.equals(assignment.getCourse().getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this submission");
     }
 }

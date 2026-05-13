@@ -18,6 +18,7 @@ public class SubmissionResponse {
 
     private Long id;
     private Long assignmentId;
+    private Long quizAttemptId;
     private UUID userId;
     //
     private LocalDateTime submittedAt;

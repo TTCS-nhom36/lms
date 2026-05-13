@@ -1,26 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { courseApi } from '../../api/courseApi';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Plus, TrendingUp, ClipboardList, Trash2 } from 'lucide-react';
-import StatusBadge from '../../components/ui/StatusBadge';
+import { BookOpen, Plus, TrendingUp, ClipboardList, Trash2, Edit } from 'lucide-react';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import { useToast } from '../../contexts/ToastContext';
-
-function SummaryCard({ icon: Icon, label, value, hint, accent = 'bg-slate-50 text-slate-700' }) {
-  return (
-    <div className="card p-5 border border-gray-200 bg-white">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${accent}`}>
-        <Icon size={18} />
-      </div>
-      <div className="text-3xl font-bold text-gray-900">{value}</div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mt-1">{label}</div>
-      {hint ? <div className="text-[11px] text-gray-400 mt-1">{hint}</div> : null}
-    </div>
-  );
-}
+import { useToast } from '../../hooks/useToast';
+import { getApiErrorMessage } from '../../utils/apiError';
+import PageHeader from '../../components/ui/PageHeader';
+import MetricCard from '../../components/ui/MetricCard';
+import CardGrid from '../../components/ui/CardGrid';
+import Button from '../../components/ui/Button';
+import Card from '../../components/ui/Card';
+import CourseCard from '../../components/course/CourseCard';
 
 export default function InstructorCourses() {
   const { user } = useAuth();
@@ -32,22 +25,22 @@ export default function InstructorCourses() {
   const [courseToDelete, setCourseToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    loadCourses();
-  }, [user?.id]);
-
-  const loadCourses = async () => {
+  const loadCourses = useCallback(async () => {
     setLoading(true);
     try {
       const res = await courseApi.getAll({ size: 1000 });
       const myCourses = (res.data.items || []).filter((course) => course.createdById === user?.id);
       setCourses(myCourses);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to load courses');
+      toast.error(getApiErrorMessage(error, 'Failed to load courses'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast, user?.id]);
+
+  useEffect(() => {
+    loadCourses();
+  }, [loadCourses]);
 
   const handleDeleteCourse = async () => {
     if (!courseToDelete) return;
@@ -58,7 +51,7 @@ export default function InstructorCourses() {
       setCourses((currentCourses) => currentCourses.filter((course) => course.id !== courseToDelete.id));
       setShowDeleteConfirm(false);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to delete course');
+      toast.error(getApiErrorMessage(error, 'Failed to delete course'));
     } finally {
       setDeleting(false);
       setCourseToDelete(null);
@@ -79,70 +72,70 @@ export default function InstructorCourses() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="card p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-1">My Courses</h2>
-        <p className="text-sm text-gray-500">Manage your courses and course content.</p>
-      </div>
+      <Card className="p-6">
+        <PageHeader title="My Courses" description="Manage your courses and course content." />
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {courseSummaryCards.map((card, index) => (
           <div key={card.label} className="animate-slide-up" style={{ opacity: 0, animationDelay: `${index * 0.05}s` }}>
-            <SummaryCard {...card} />
+            <MetricCard {...card} />
           </div>
         ))}
       </div>
 
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-800">My Courses</h3>
-        <button onClick={() => navigate('/instructor/courses/new')} className="btn-primary">
-          <Plus size={15} /> New Course
-        </button>
-      </div>
+      <PageHeader
+        title="My Courses"
+        actions={<Button onClick={() => navigate('/instructor/courses/new')}><Plus size={15} /> New Course</Button>}
+      />
 
       {courses.length === 0 ? (
         <EmptyState icon={BookOpen} title="No courses yet" description="Create your first course to get started" />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <CardGrid>
           {courses.map((course, i) => (
-            <div
+            <CourseCard
               key={course.id}
-              className="card overflow-hidden cursor-pointer animate-slide-up"
-              style={{ opacity: 0, animationDelay: `${i * 0.05}s` }}
-              onClick={() => navigate(`/instructor/courses/${course.id}/edit`)}
-            >
-              <div className="h-28 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-                {course.thumbnailUrl ? (
-                  <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
-                ) : (
-                  <BookOpen size={28} className="text-blue-300" />
-                )}
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <h4 className="font-semibold text-gray-900 text-sm truncate flex-1">{course.title}</h4>
-                  <StatusBadge status={course.status} size="xs" />
-                </div>
-                <p className="text-xs text-gray-400 line-clamp-2">{course.description || 'No description'}</p>
+              course={course}
+              index={i}
+              onClick={() => navigate(`/instructor/courses/${course.id}`)}
+              footer={
                 <div className="mt-4 flex items-center justify-between">
-                  <button
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/instructor/courses/${course.id}/edit`);
+                      }}
+                      className="!p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50"
+                      title="Edit settings"
+                    >
+                      <Edit size={16} />
+                    </Button>
+                    <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={(event) => {
                       event.stopPropagation();
                       setCourseToDelete(course);
                       setShowDeleteConfirm(true);
                     }}
-                    className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    className="!p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50"
                     title="Delete course"
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </Button>
+                  </div>
                   <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                     {course.lessonsCount || 0} Lessons
                   </span>
                 </div>
-              </div>
-            </div>
+              }
+            />
           ))}
-        </div>
+        </CardGrid>
       )}
 
       <ConfirmDialog

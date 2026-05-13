@@ -24,6 +24,7 @@ import com.ttcs.backend.mapper.QuestionMapper;
 import com.ttcs.backend.mapper.SubmissionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
 import com.ttcs.backend.repository.CourseRepository;
+import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.QuestionRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
@@ -43,8 +44,10 @@ public class AssignmentService {
     private final QuestionMapper questionMapper;
     private final SubmissionMapper submissionMapper;
     private final com.ttcs.backend.repository.QuizAttemptRepository quizAttemptRepository;
+    private final CurrentUserService currentUserService;
+    private final EnrollmentRepository enrollmentRepository;
 
-    public AssignmentService(AssignmentRepository assignmentRepository, CourseRepository courseRepository, LessonRepository lessonRepository, UserRepository userRepository, QuestionRepository questionRepository, SubmissionRepository submissionRepository, AssignmentMapper assignmentMapper, QuestionMapper questionMapper, SubmissionMapper submissionMapper, com.ttcs.backend.repository.QuizAttemptRepository quizAttemptRepository) {
+    public AssignmentService(AssignmentRepository assignmentRepository, CourseRepository courseRepository, LessonRepository lessonRepository, UserRepository userRepository, QuestionRepository questionRepository, SubmissionRepository submissionRepository, AssignmentMapper assignmentMapper, QuestionMapper questionMapper, SubmissionMapper submissionMapper, com.ttcs.backend.repository.QuizAttemptRepository quizAttemptRepository, CurrentUserService currentUserService, EnrollmentRepository enrollmentRepository) {
         this.assignmentRepository = assignmentRepository;
         this.courseRepository = courseRepository;
         this.lessonRepository = lessonRepository;
@@ -55,6 +58,8 @@ public class AssignmentService {
         this.questionMapper = questionMapper;
         this.submissionMapper = submissionMapper;
         this.quizAttemptRepository = quizAttemptRepository;
+        this.currentUserService = currentUserService;
+        this.enrollmentRepository = enrollmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -83,7 +88,9 @@ public class AssignmentService {
             throw new AppException(ErrorCode.BAD_REQUEST, "Created By ID is required");
         }
         Assignment assignment = assignmentMapper.toEntity(request);
-        assignment.setCourse(findCourseById(request.getCourseId()));
+        Course course = findCourseById(request.getCourseId());
+        assertCanManageCourse(course);
+        assignment.setCourse(course);
         if (request.getLessonId() != null) {
             assignment.setLesson(findLessonById(request.getLessonId()));
         }
@@ -101,6 +108,7 @@ public class AssignmentService {
 
     public AssignmentResponse update(Long id, CreateAssignmentRequest request) {
         Assignment assignment = findAssignmentEntityById(id);
+        assertCanManageAssignment(assignment);
         // Only update course if explicitly provided (keep existing if not)
         if (request.getCourseId() != null) {
             assignment.setCourse(findCourseById(request.getCourseId()));
@@ -125,6 +133,7 @@ public class AssignmentService {
 
     public void delete(Long id) {
         Assignment assignment = findAssignmentEntityById(id);
+        assertCanManageAssignment(assignment);
         
         // Delete QuizAttempts manually first to prevent FK constraint violations
         // (SelectedAnswer references QuestionOption, so we must delete SelectedAnswers before QuestionOptions)
@@ -136,6 +145,7 @@ public class AssignmentService {
 
     public QuestionResponse addQuestion(Long assignmentId, CreateQuestionRequest request) {
         Assignment assignment = findAssignmentEntityById(assignmentId);
+        assertCanManageAssignment(assignment);
         Question question = questionMapper.toEntity(request);
         question.setAssignment(assignment);
         return questionMapper.toResponse(questionRepository.save(question));
@@ -143,6 +153,7 @@ public class AssignmentService {
 
     @Transactional(readOnly = true)
     public List<SubmissionResponse> findSubmissions(Long assignmentId) {
+        assertCanManageAssignment(findAssignmentEntityById(assignmentId));
         return submissionRepository.findAll().stream()
                 .filter(submission -> submission.getAssignment() != null && assignmentId.equals(submission.getAssignment().getId()))
                 .map(submissionMapper::toResponse)
@@ -161,6 +172,12 @@ public class AssignmentService {
 
     @Transactional(readOnly = true)
     public List<QuestionResponse> findQuestions(Long assignmentId) {
+        Assignment assignment = findAssignmentEntityById(assignmentId);
+        if (!currentUserService.hasRole("ADMIN")
+                && !currentUserService.hasRole("INSTRUCTOR")
+                && !hasEnrollment(assignment.getCourse(), currentUserService.getCurrentUserId())) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
+        }
         return questionRepository.findAll().stream()
                 .filter(question -> question.getAssignment() != null && assignmentId.equals(question.getAssignment().getId()))
                 .map(questionMapper::toResponse)
@@ -185,5 +202,34 @@ public class AssignmentService {
     private User findUserById(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "User not found: " + id));
+    }
+
+    private void assertCanManageAssignment(Assignment assignment) {
+        assertCanManageCourse(assignment.getCourse());
+    }
+
+    private void assertCanManageCourse(Course course) {
+        if (course == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Course not found");
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        UUID currentUserId = currentUserService.getCurrentUserId();
+        if (course.getCreatedBy() != null && currentUserId.equals(course.getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this course");
+    }
+
+    private boolean hasEnrollment(Course course, UUID userId) {
+        if (course == null || userId == null) {
+            return false;
+        }
+        return enrollmentRepository.findAll().stream()
+                .anyMatch(enrollment -> enrollment.getUser() != null
+                        && userId.equals(enrollment.getUser().getId())
+                        && enrollment.getCourse() != null
+                        && course.getId().equals(enrollment.getCourse().getId()));
     }
 }
