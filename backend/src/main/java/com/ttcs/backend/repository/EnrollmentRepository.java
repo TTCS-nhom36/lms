@@ -15,4 +15,10 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 	@Override
 	@EntityGraph(attributePaths = {"user", "course"})
 	Optional<Enrollment> findById(Long id);
+
+	@EntityGraph(attributePaths = {"user", "course", "course.createdBy"})
+	List<Enrollment> findByUserId(java.util.UUID userId);
+
+	@EntityGraph(attributePaths = {"user", "course"})
+	List<Enrollment> findByCourseId(Long courseId);
 }

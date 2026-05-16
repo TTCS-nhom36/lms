@@ -80,13 +80,12 @@ public class LessonController {
 
     /**
      * Upload a PDF document for a lesson (max 25 MB).
-     * Returns the S3 key to be stored as contentUrl.
+     * Returns the S3 object URL to be stored as contentUrl and the raw S3 key for compatibility.
      */
     @PostMapping(value = "/api/lms/lessons/upload-document", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<Map<String, String>> uploadDocument(@RequestParam("file") MultipartFile file) {
-        String s3Key = lessonService.uploadDocument(file);
-        return ResponseEntity.ok(Map.of("s3Key", s3Key));
+        return ResponseEntity.ok(lessonService.uploadDocument(file));
     }
 
     /**

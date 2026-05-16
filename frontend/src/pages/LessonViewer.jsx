@@ -62,9 +62,10 @@ export default function LessonViewer() {
       if (data.contentType === 'DOCUMENT' && data.contentUrl) {
         try {
           const urlRes = await lessonApi.getDocumentUrl(data.id);
-          setDocumentUrl(urlRes.data.url);
+          setDocumentUrl(urlRes.data.url || data.contentUrl);
         } catch {
           console.warn('Could not fetch document presigned URL');
+          setDocumentUrl(data.contentUrl);
         }
       }
     } catch {

@@ -14,7 +14,12 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.UUID;
 
 @Service
@@ -63,9 +68,10 @@ public class S3Service {
      * @return presigned URL string
      */
     public String getPresignedUrl(String key) {
+        String objectKey = normalizeObjectKey(key);
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                 .bucket(bucketName)
-                .key(key)
+                .key(objectKey)
                 .build();
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
@@ -84,7 +90,11 @@ public class S3Service {
      * @return public URL string
      */
     public String getFileUrl(String key) {
-        return String.format("https://%s.s3.ap-southeast-1.amazonaws.com/%s", bucketName, key);
+        return String.format("https://%s.s3.ap-southeast-1.amazonaws.com/%s", bucketName, encodeObjectKey(key));
+    }
+
+    public String getObjectKey(String keyOrUrl) {
+        return normalizeObjectKey(keyOrUrl);
     }
 
     /**
@@ -95,9 +105,10 @@ public class S3Service {
      */
     public byte[] getFileBytes(String key) {
         try {
+            String objectKey = normalizeObjectKey(key);
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(bucketName)
-                    .key(key)
+                    .key(objectKey)
                     .build();
 
             ResponseInputStream<GetObjectResponse> response = s3Client.getObject(getObjectRequest);
@@ -115,9 +126,10 @@ public class S3Service {
      * @return the content type string
      */
     public String getFileContentType(String key) {
+        String objectKey = normalizeObjectKey(key);
         HeadObjectRequest headRequest = HeadObjectRequest.builder()
                 .bucket(bucketName)
-                .key(key)
+                .key(objectKey)
                 .build();
         HeadObjectResponse headResponse = s3Client.headObject(headRequest);
         return headResponse.contentType();
@@ -130,9 +142,10 @@ public class S3Service {
      */
     public void deleteFile(String key) {
         try {
+            String objectKey = normalizeObjectKey(key);
             DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
                     .bucket(bucketName)
-                    .key(key)
+                    .key(objectKey)
                     .build();
 
             s3Client.deleteObject(deleteObjectRequest);
@@ -141,5 +154,34 @@ public class S3Service {
             log.error("Failed to delete file from S3: {}", e.getMessage());
             throw new RuntimeException("Failed to delete file from S3", e);
         }
+    }
+
+    private String normalizeObjectKey(String keyOrUrl) {
+        if (keyOrUrl == null || keyOrUrl.isBlank()) {
+            return keyOrUrl;
+        }
+        String value = keyOrUrl.trim();
+        if (!value.startsWith("http://") && !value.startsWith("https://")) {
+            return value;
+        }
+        try {
+            URI uri = URI.create(value);
+            String path = uri.getRawPath();
+            if (path == null || path.isBlank()) {
+                return value;
+            }
+            String key = path.startsWith("/") ? path.substring(1) : path;
+            return URLDecoder.decode(key, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            log.warn("Could not parse S3 object URL, using raw value: {}", keyOrUrl);
+            return value;
+        }
+    }
+
+    private String encodeObjectKey(String key) {
+        return Arrays.stream(key.split("/", -1))
+                .map(part -> URLEncoder.encode(part, StandardCharsets.UTF_8).replace("+", "%20"))
+                .reduce((left, right) -> left + "/" + right)
+                .orElse(key);
     }
 }

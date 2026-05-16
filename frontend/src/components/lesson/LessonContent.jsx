@@ -57,45 +57,70 @@ export default function LessonContent({
     case 'NOTEBOOK':
       return (
         <div className="glass-card p-6 space-y-4">
-          {lesson.contentType === 'DOCUMENT' && (
-            documentUrl ? (
-              <a href={documentUrl} target="_blank" rel="noreferrer" download className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#0071e3] text-white font-semibold text-sm hover:bg-[#0077ed] transition-colors shadow-sm">
-                <Download size={18} /> Download document
+          <div className="flex flex-wrap items-center gap-4">
+            {lesson.contentType === 'DOCUMENT' && (
+              documentUrl ? (
+                <a href={documentUrl} target="_blank" rel="noreferrer" download className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#0071e3] text-white font-semibold text-sm hover:bg-[#0077ed] transition-colors shadow-sm">
+                  <Download size={18} /> Download document
+                </a>
+              ) : lesson.contentUrl ? (
+                <a href={lesson.contentUrl} target="_blank" rel="noreferrer" download className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#0071e3] text-white font-semibold text-sm hover:bg-[#0077ed] transition-colors shadow-sm">
+                  <Download size={18} /> Download document
+                </a>
+              ) : (
+                <p className="text-neutral-400 text-sm">No document attached.</p>
+              )
+            )}
+            {lesson.contentType === 'NOTEBOOK' && lesson.contentUrl && (
+              <a href={lesson.contentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-colors font-semibold text-sm shadow-sm">
+                <ExternalLink size={18} /> Open notebook
               </a>
-            ) : lesson.contentUrl ? (
-              <p className="text-sm text-neutral-400">Loading document link...</p>
-            ) : (
-              <p className="text-neutral-400 text-sm">No document attached.</p>
-            )
-          )}
-          {lesson.contentType === 'NOTEBOOK' && lesson.contentUrl && (
-            <a href={lesson.contentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors font-medium text-sm">
-              <ExternalLink size={16} /> Open notebook
-            </a>
-          )}
+            )}
+          </div>
+          
           {lesson.contentText && (
-            <div className="text-neutral-700 text-sm leading-relaxed whitespace-pre-wrap">
-              {lesson.contentText}
+            <div className="mt-6 bg-neutral-50/50 p-5 rounded-xl border border-neutral-100">
+              <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <BookOpen size={14} />
+                Content / Notes
+              </h4>
+              <div className="text-neutral-700 text-sm leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto custom-scrollbar">
+                {lesson.contentText}
+              </div>
             </div>
           )}
           {!lesson.contentUrl && !lesson.contentText && (
-            <p className="text-neutral-400 text-sm">No document content available.</p>
+            <p className="text-neutral-400 text-sm">No content available.</p>
           )}
         </div>
       );
 
     case 'LINK':
       return (
-        <div className="glass-card p-10 flex flex-col items-center gap-4">
+        <div className="glass-card p-8 flex flex-col items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center">
             <LinkIcon size={32} className="text-cyan-500" />
           </div>
-          <p className="text-neutral-500 text-sm">External resource</p>
-          <a href={lesson.contentUrl} target="_blank" rel="noreferrer" className="btn-primary !bg-gradient-to-r !from-cyan-500 !to-blue-600">
-            <ExternalLink size={16} /> Open link
+          <h3 className="text-lg font-semibold text-neutral-800">External Resource</h3>
+          <p className="text-neutral-500 text-sm max-w-md text-center">Click the button below to visit the external link for this lesson.</p>
+          
+          <a href={lesson.contentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-sm hover:opacity-90 transition-opacity shadow-md shadow-cyan-500/20">
+            <ExternalLink size={18} /> Open Link
           </a>
           {lesson.contentUrl && (
-            <p className="text-xs text-neutral-400 break-all max-w-md text-center">{lesson.contentUrl}</p>
+            <p className="text-xs text-neutral-400 break-all max-w-md text-center mt-2 bg-neutral-50 px-3 py-2 rounded-lg">{lesson.contentUrl}</p>
+          )}
+          
+          {lesson.contentText && (
+            <div className="w-full mt-6 bg-neutral-50/50 p-5 rounded-xl border border-neutral-100 text-left">
+              <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <BookOpen size={14} />
+                Content / Notes
+              </h4>
+              <div className="text-neutral-700 text-sm leading-relaxed whitespace-pre-wrap">
+                {lesson.contentText}
+              </div>
+            </div>
           )}
         </div>
       );

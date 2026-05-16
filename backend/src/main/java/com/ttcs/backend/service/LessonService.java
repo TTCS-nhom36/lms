@@ -17,14 +17,18 @@ import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.LessonProgressRepository;
 import com.ttcs.backend.repository.UserRepository;
+import com.ttcs.backend.service.chat.RagService;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Transactional
+@Slf4j
 public class LessonService {
 
     private static final long MAX_DOCUMENT_SIZE = 25 * 1024 * 1024L; // 25 MB
@@ -38,8 +42,12 @@ public class LessonService {
     private final LessonProgressMapper lessonProgressMapper;
     private final S3Service s3Service;
     private final CurrentUserService currentUserService;
+    private final RagService ragService;
 
-    public LessonService(LessonRepository lessonRepository, ChapterRepository chapterRepository, LessonProgressRepository lessonProgressRepository, EnrollmentRepository enrollmentRepository, UserRepository userRepository, LessonMapper lessonMapper, LessonProgressMapper lessonProgressMapper, S3Service s3Service, CurrentUserService currentUserService) {
+    public LessonService(LessonRepository lessonRepository, ChapterRepository chapterRepository,
+            LessonProgressRepository lessonProgressRepository, EnrollmentRepository enrollmentRepository,
+            UserRepository userRepository, LessonMapper lessonMapper, LessonProgressMapper lessonProgressMapper,
+            S3Service s3Service, CurrentUserService currentUserService, RagService ragService) {
         this.lessonRepository = lessonRepository;
         this.chapterRepository = chapterRepository;
         this.lessonProgressRepository = lessonProgressRepository;
@@ -49,6 +57,7 @@ public class LessonService {
         this.lessonProgressMapper = lessonProgressMapper;
         this.s3Service = s3Service;
         this.currentUserService = currentUserService;
+        this.ragService = ragService;
     }
 
     @Transactional(readOnly = true)
@@ -63,7 +72,8 @@ public class LessonService {
                 .map(lesson -> {
                     LessonProgress progress = null;
                     if (userId != null) {
-                        progress = lessonProgressRepository.findByLessonIdAndUserId(lesson.getId(), userId).orElse(null);
+                        progress = lessonProgressRepository.findByLessonIdAndUserId(lesson.getId(), userId)
+                                .orElse(null);
                     }
                     return lessonMapper.toResponse(lesson, progress);
                 })
@@ -78,7 +88,8 @@ public class LessonService {
     @Transactional(readOnly = true)
     public LessonResponse findAccessibleById(Long id, UUID userId) {
         Lesson lesson = findLessonEntityById(id);
-        if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId) || currentUserService.hasRole("ADMIN") || currentUserService.hasRole("INSTRUCTOR")) {
+        if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId)
+                || currentUserService.hasRole("ADMIN") || currentUserService.hasRole("INSTRUCTOR")) {
             LessonProgress progress = null;
             if (userId != null) {
                 progress = lessonProgressRepository.findByLessonIdAndUserId(id, userId).orElse(null);
@@ -107,7 +118,8 @@ public class LessonService {
     public LessonResponse update(Long id, CreateLessonRequest request) {
         Lesson lesson = findLessonEntityById(id);
         assertCanManageLesson(lesson);
-        Chapter chapter = request.getChapterId() != null ? findChapterById(request.getChapterId()) : lesson.getChapter();
+        Chapter chapter = request.getChapterId() != null ? findChapterById(request.getChapterId())
+                : lesson.getChapter();
         assertCanManageChapter(chapter);
         lesson.setChapter(chapter);
         lesson.setTitle(request.getTitle());
@@ -115,7 +127,8 @@ public class LessonService {
         lesson.setContentUrl(request.getContentUrl());
         lesson.setContentText(request.getContentText());
         lesson.setOrderIndex(request.getOrderIndex());
-        lesson.setUnlockCondition(request.getUnlockConditionId() != null ? findLessonEntityById(request.getUnlockConditionId()) : null);
+        lesson.setUnlockCondition(
+                request.getUnlockConditionId() != null ? findLessonEntityById(request.getUnlockConditionId()) : null);
         lesson.setIsFreePreview(request.getIsFreePreview());
         return lessonMapper.toResponse(lessonRepository.save(lesson));
     }
@@ -131,9 +144,9 @@ public class LessonService {
      * Validates: only application/pdf, max 25 MB.
      *
      * @param file the uploaded file
-     * @return S3 key of the stored document
+     * @return S3 key and object URL of the stored document
      */
-    public String uploadDocument(MultipartFile file) {
+    public Map<String, String> uploadDocument(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.BAD_REQUEST, "No file provided");
         }
@@ -144,7 +157,15 @@ public class LessonService {
         if (file.getSize() > MAX_DOCUMENT_SIZE) {
             throw new AppException(ErrorCode.BAD_REQUEST, "File size must not exceed 25 MB");
         }
-        return s3Service.uploadFile(file, "lesson-documents");
+        String s3Key = s3Service.uploadFile(file, "lesson-documents");
+        String objectUrl = s3Service.getFileUrl(s3Key);
+        try {
+            int chunkCount = ragService.indexUploadedLessonDocument(file, s3Key, objectUrl);
+            return Map.of("s3Key", s3Key, "objectUrl", objectUrl, "chunkCount", String.valueOf(chunkCount));
+        } catch (java.io.IOException e) {
+            log.error("Failed to index uploaded lesson document into Qdrant: {}", e.getMessage(), e);
+            throw new AppException(ErrorCode.BAD_REQUEST, "Could not extract text from PDF for chatbot indexing");
+        }
     }
 
     /**
@@ -158,7 +179,8 @@ public class LessonService {
     @Transactional(readOnly = true)
     public String getDocumentPresignedUrl(Long lessonId, UUID userId) {
         Lesson lesson = findLessonEntityById(lessonId);
-        if (!Boolean.TRUE.equals(lesson.getIsFreePreview()) && !hasAccess(lesson, userId)) {
+        if (!Boolean.TRUE.equals(lesson.getIsFreePreview()) && !hasAccess(lesson, userId)
+                && !currentUserService.hasRole("ADMIN") && !currentUserService.hasRole("INSTRUCTOR")) {
             throw new AppException(ErrorCode.ACCESS_DENIED, "Lesson requires enrollment");
         }
         String s3Key = lesson.getContentUrl();
@@ -182,19 +204,19 @@ public class LessonService {
                 .orElseGet(LessonProgress::new);
         lessonProgress.setLesson(lesson);
         lessonProgress.setUser(user);
-        
+
         if (request != null && request.getIsCompleted() != null) {
             lessonProgress.setIsCompleted(request.getIsCompleted());
         } else if (lessonProgress.getIsCompleted() == null) {
             lessonProgress.setIsCompleted(false);
         }
-        
+
         if (request != null && request.getWatchDurationSecs() != null) {
             lessonProgress.setWatchDurationSecs(request.getWatchDurationSecs());
         } else if (lessonProgress.getWatchDurationSecs() == null) {
             lessonProgress.setWatchDurationSecs(0);
         }
-        
+
         lessonProgress.setLastAccessedAt(java.time.LocalDateTime.now());
         if (Boolean.TRUE.equals(lessonProgress.getIsCompleted()) && lessonProgress.getCompletedAt() == null) {
             lessonProgress.setCompletedAt(java.time.LocalDateTime.now());

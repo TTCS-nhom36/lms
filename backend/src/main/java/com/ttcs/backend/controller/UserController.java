@@ -39,7 +39,7 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<PageResponse<UserResponse>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UserRole role,

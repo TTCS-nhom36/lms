@@ -1,11 +1,7 @@
 package com.ttcs.backend.service.chat;
 
-import com.ttcs.backend.entity.Course;
-import com.ttcs.backend.entity.Enrollment;
 import com.ttcs.backend.entity.User;
 import com.ttcs.backend.enums.UserRole;
-import com.ttcs.backend.repository.CourseRepository;
-import com.ttcs.backend.repository.EnrollmentRepository;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -20,34 +16,37 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatSemanticSearchService {
 
     private final RagService ragService;
-    private final CourseRepository courseRepository;
-    private final EnrollmentRepository enrollmentRepository;
 
     @Transactional(readOnly = true)
-    public String search(User user, String question) {
+    public String search(User user, String question, List<Long> visibleCourseIds) {
+        long startNanos = System.nanoTime();
         try {
-            String filter = buildVisibilityFilter(user);
+            List<String> courseIdStrs = visibleCourseIds.stream()
+                    .map(String::valueOf)
+                    .toList();
+            String filter = buildVisibilityFilter(user, courseIdStrs);
             List<Document> results = ragService.search(question, 10, filter);
-            List<Document> filtered = filterResultsForUser(user, results);
-            log.info("Qdrant semantic search successful. Found {} documents after filtering.", filtered.size());
+            List<Document> filtered = filterResultsForUser(user, results, courseIdStrs);
+            log.info("Qdrant semantic search successful userId={} rawResults={} filteredResults={} latencyMs={}",
+                    user.getId(), results.size(), filtered.size(), elapsedMs(startNanos));
             return ragService.buildContextFromResults(filtered);
         } catch (Exception e) {
-            log.warn("Qdrant semantic search failed: {}", e.getMessage());
+            log.warn("Qdrant semantic search failed userId={} latencyMs={}: {}",
+                    user.getId(), elapsedMs(startNanos), e.getMessage());
             return "Khong the tim kiem semantic trong Qdrant tai thoi diem nay.";
         }
     }
 
-    String buildVisibilityFilter(User user) {
+    private long elapsedMs(long startNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+    }
+
+    String buildVisibilityFilter(User user, List<String> courseIds) {
         if (user.getRole() == UserRole.ADMIN) {
             return null;
         }
 
         if (user.getRole() == UserRole.INSTRUCTOR) {
-            List<String> courseIds = courseRepository.findAll().stream()
-                    .filter(course -> course.getCreatedBy().getId().equals(user.getId()))
-                    .map(Course::getId)
-                    .map(String::valueOf)
-                    .toList();
             return joinOr(List.of(
                     and(eq("visibility", "COURSE"), inCourseIds(courseIds)),
                     and(eq("visibility", "INSTRUCTOR"), inCourseIds(courseIds)),
@@ -55,15 +54,8 @@ public class ChatSemanticSearchService {
                     eq("uploadedByUserId", user.getId().toString())));
         }
 
-        List<String> enrolledCourseIds = enrollmentRepository.findAll().stream()
-                .filter(enrollment -> enrollment.getUser().getId().equals(user.getId()))
-                .map(Enrollment::getCourse)
-                .map(Course::getId)
-                .map(String::valueOf)
-                .toList();
-
         return joinOr(List.of(
-                and(eq("visibility", "COURSE"), inCourseIds(enrolledCourseIds)),
+                and(eq("visibility", "COURSE"), inCourseIds(courseIds)),
                 and(eq("visibility", "USER"), eq("userId", user.getId().toString())),
                 eq("uploadedByUserId", user.getId().toString())));
     }
@@ -99,29 +91,20 @@ public class ChatSemanticSearchService {
         return "visibility == '__none__'";
     }
 
-    private List<Document> filterResultsForUser(User user, List<Document> results) {
+    private List<Document> filterResultsForUser(User user, List<Document> results, List<String> visibleCourseIds) {
         if (user.getRole() == UserRole.ADMIN) {
             return results;
         }
 
         String userId = user.getId().toString();
         if (user.getRole() == UserRole.INSTRUCTOR) {
-            Set<String> courseIds = courseRepository.findAll().stream()
-                    .filter(course -> course.getCreatedBy().getId().equals(user.getId()))
-                    .map(Course::getId)
-                    .map(String::valueOf)
-                    .collect(java.util.stream.Collectors.toSet());
+            Set<String> courseIds = Set.copyOf(visibleCourseIds);
             return results.stream()
                     .filter(doc -> isAllowedForInstructor(doc, userId, courseIds))
                     .toList();
         }
 
-        Set<String> enrolledCourseIds = enrollmentRepository.findAll().stream()
-                .filter(enrollment -> enrollment.getUser().getId().equals(user.getId()))
-                .map(Enrollment::getCourse)
-                .map(Course::getId)
-                .map(String::valueOf)
-                .collect(java.util.stream.Collectors.toSet());
+        Set<String> enrolledCourseIds = Set.copyOf(visibleCourseIds);
 
         return results.stream()
                 .filter(doc -> isAllowedForStudent(doc, userId, enrolledCourseIds))

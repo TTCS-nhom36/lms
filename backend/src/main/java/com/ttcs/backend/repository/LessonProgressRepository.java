@@ -18,4 +18,7 @@ public interface LessonProgressRepository extends JpaRepository<LessonProgress, 
 
 	@EntityGraph(attributePaths = {"lesson", "lesson.chapter", "lesson.chapter.course"})
 	List<LessonProgress> findByUserId(UUID userId);
+
+	@EntityGraph(attributePaths = {"user", "lesson", "lesson.chapter", "lesson.chapter.course"})
+	List<LessonProgress> findByLessonChapterCourseIdIn(List<Long> courseIds);
 }

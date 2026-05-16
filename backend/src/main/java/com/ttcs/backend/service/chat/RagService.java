@@ -6,6 +6,7 @@ import com.ttcs.backend.event.chat.RagDeleteEvent;
 import com.ttcs.backend.event.chat.RagSyncEvent;
 import com.ttcs.backend.repository.*;
 import com.ttcs.backend.service.CurrentUserService;
+import com.ttcs.backend.service.S3Service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -46,6 +47,7 @@ public class RagService {
     private final UploadedDocumentRepository uploadedDocumentRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
+    private final S3Service s3Service;
 
     // @EventListener(ApplicationReadyEvent.class) // Disabled to prevent API rate limits on startup
     @Transactional(readOnly = true)
@@ -172,7 +174,7 @@ public class RagService {
         } else if (clazz.equals(Chapter.class)) {
             deleteByFilter("chapterId == '" + id + "' && docType == 'CHAPTER'");
         } else if (clazz.equals(Lesson.class)) {
-            deleteByFilter("lessonId == '" + id + "' && (docType == 'LESSON' || docType == 'LESSON_CONTENT')");
+            deleteByFilter("lessonId == '" + id + "' && (docType == 'LESSON' || docType == 'LESSON_CONTENT' || docType == 'LESSON_DOCUMENT')");
         } else if (clazz.equals(Assignment.class)) {
             deleteByFilter("assignmentId == '" + id + "' && docType == 'ASSIGNMENT'");
         } else if (clazz.equals(Question.class)) {
@@ -290,7 +292,50 @@ public class RagService {
                             "visibility", "COURSE",
                             "type", "LESSON")));
         }
+
+        if (lesson.getContentType() == com.ttcs.backend.enums.LessonContentType.DOCUMENT
+                && lesson.getContentUrl() != null && !lesson.getContentUrl().isBlank()) {
+            documents.addAll(createLessonPdfDocuments(lesson, course, chapter, lessonContent));
+        }
         return documents;
+    }
+
+    private List<Document> createLessonPdfDocuments(Lesson lesson, Course course, Chapter chapter, String lessonContent) {
+        try {
+            String objectKey = s3Service.getObjectKey(lesson.getContentUrl());
+            deleteByFilter("s3Key == '" + escapeFilterValue(objectKey) + "' && docType == 'LESSON_DOCUMENT_UPLOAD'");
+            byte[] pdfBytes = s3Service.getFileBytes(lesson.getContentUrl());
+            String fullText = extractPdfText(pdfBytes);
+            if (fullText == null || fullText.isBlank()) {
+                log.warn("Lesson PDF has no extractable text, lessonId={}", lesson.getId());
+                return List.of();
+            }
+
+            List<String> chunks = chunkText(fullText, 1000);
+            List<Document> documents = new ArrayList<>();
+            for (int i = 0; i < chunks.size(); i++) {
+                documents.add(createDocument(
+                        "lesson-" + lesson.getId() + "-pdf-chunk-" + i,
+                        "LESSON_DOCUMENT",
+                        lessonContent + "\nTài liệu PDF:\n" + chunks.get(i),
+                        Map.ofEntries(
+                                Map.entry("courseId", course.getId().toString()),
+                                Map.entry("chapterId", chapter.getId().toString()),
+                                Map.entry("lessonId", lesson.getId().toString()),
+                                Map.entry("createdBy", course.getCreatedBy().getId().toString()),
+                                Map.entry("sourceEntity", "Lesson"),
+                                Map.entry("sourceEntityId", lesson.getId().toString()),
+                                Map.entry("sensitive", "false"),
+                                Map.entry("visibility", "COURSE"),
+                                Map.entry("type", "LESSON_DOCUMENT"),
+                                Map.entry("fileUrl", lesson.getContentUrl()),
+                                Map.entry("chunk", String.valueOf(i)))));
+            }
+            return documents;
+        } catch (Exception e) {
+            log.warn("Failed to index lesson PDF lessonId={}: {}", lesson.getId(), e.getMessage());
+            return List.of();
+        }
     }
 
     private List<Document> createAssignmentDocuments(Assignment assignment) {
@@ -510,6 +555,48 @@ public class RagService {
                 .build();
     }
 
+    public int indexUploadedLessonDocument(MultipartFile file, String s3Key, String objectUrl) throws IOException {
+        java.util.UUID userId = currentUserService.getCurrentUserId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new com.ttcs.backend.exception.AppException(
+                        com.ttcs.backend.exception.ErrorCode.USER_NOT_FOUND));
+
+        String fileName = file.getOriginalFilename();
+        String fullText = extractPdfText(file);
+        if (fullText == null || fullText.isBlank()) {
+            throw new com.ttcs.backend.exception.AppException(
+                    com.ttcs.backend.exception.ErrorCode.BAD_REQUEST,
+                    "PDF không chứa nội dung text có thể trích xuất.");
+        }
+
+        List<String> chunks = chunkText(fullText, 1000);
+        List<Document> documents = new ArrayList<>();
+        String docIdBase = "lesson-upload-" + s3Key;
+        for (int i = 0; i < chunks.size(); i++) {
+            documents.add(createDocument(
+                    docIdBase + "-chunk-" + i,
+                    "LESSON_DOCUMENT_UPLOAD",
+                    "Tài liệu bài học PDF: " + fileName + "\n\n" + chunks.get(i),
+                    Map.ofEntries(
+                            Map.entry("type", "LESSON_DOCUMENT_UPLOAD"),
+                            Map.entry("fileName", fileName != null ? fileName : ""),
+                            Map.entry("fileUrl", objectUrl),
+                            Map.entry("s3Key", s3Key),
+                            Map.entry("chunk", String.valueOf(i)),
+                            Map.entry("userId", user.getId().toString()),
+                            Map.entry("ownerUserId", user.getId().toString()),
+                            Map.entry("sourceEntity", "LessonUpload"),
+                            Map.entry("sourceEntityId", s3Key),
+                            Map.entry("sensitive", "true"),
+                            Map.entry("visibility", "USER"),
+                            Map.entry("uploadedByUserId", user.getId().toString()),
+                            Map.entry("uploadedBy", user.getFullName()))));
+        }
+        addDocumentsInBatches(documents);
+        log.info("Uploaded lesson PDF indexed: {} -> {} chunks", fileName, chunks.size());
+        return chunks.size();
+    }
+
     /**
      * List all uploaded documents.
      */
@@ -540,6 +627,33 @@ public class RagService {
         metadata.putIfAbsent("sensitive", "false");
         String uuid = java.util.UUID.nameUUIDFromBytes(id.getBytes()).toString();
         return new Document(uuid, content, metadata);
+    }
+
+    private String escapeFilterValue(String value) {
+        return value == null ? "" : value.replace("'", "\\'");
+    }
+
+    private String extractPdfText(MultipartFile file) throws IOException {
+        try (InputStream is = file.getInputStream();
+             PDDocument pdf = Loader.loadPDF(is.readAllBytes())) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            return stripper.getText(pdf);
+        }
+    }
+
+    private String extractPdfText(byte[] pdfBytes) throws IOException {
+        try (PDDocument pdf = Loader.loadPDF(pdfBytes)) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            return stripper.getText(pdf);
+        }
+    }
+
+    private void addDocumentsInBatches(List<Document> documents) {
+        int batchSize = 20;
+        for (int i = 0; i < documents.size(); i += batchSize) {
+            List<Document> batch = documents.subList(i, Math.min(i + batchSize, documents.size()));
+            vectorStore.add(batch);
+        }
     }
 
     private List<String> chunkText(String text, int chunkSize) {

@@ -15,4 +15,7 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 	@Override
 	@EntityGraph(attributePaths = {"createdBy"})
 	Optional<Course> findById(Long id);
+
+	@EntityGraph(attributePaths = {"createdBy"})
+	List<Course> findByCreatedById(java.util.UUID createdById);
 }

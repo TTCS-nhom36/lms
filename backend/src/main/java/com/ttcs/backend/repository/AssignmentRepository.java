@@ -18,4 +18,7 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
 
 	@EntityGraph(attributePaths = {"course"})
 	List<Assignment> findByCourseId(Long courseId);
+
+	@EntityGraph(attributePaths = {"lesson", "course", "createdBy"})
+	List<Assignment> findByCourseIdIn(List<Long> courseIds);
 }

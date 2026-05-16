@@ -4,25 +4,28 @@ import com.ttcs.backend.dto.response.ChatMessageResponse;
 import com.ttcs.backend.entity.ChatMessage;
 import com.ttcs.backend.entity.ChatMessage.MessageRole;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.enums.UserRole;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.repository.ChatMessageRepository;
 import com.ttcs.backend.repository.UserRepository;
 import com.ttcs.backend.service.CurrentUserService;
-import com.ttcs.backend.service.chat.model.ChatCacheMessage;
-import com.ttcs.backend.service.chat.model.ChatIntentAnalysis;
-import com.ttcs.backend.service.chat.model.ChatRelevantData;
-import java.text.Normalizer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,52 +33,62 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class ChatService {
 
+    private static final Duration LLM_TIMEOUT = Duration.ofSeconds(45);
+    private static final int MAX_USER_MESSAGE_CHARS = 2_000;
+    private static final int MAX_LOG_TEXT_CHARS = 500;
+
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
-    private final ChatIntentParser chatIntentParser;
-    private final ChatBusinessService chatBusinessService;
     private final ChatPromptBuilder chatPromptBuilder;
     private final ChatHistoryCacheService chatHistoryCacheService;
+    private final ChatRateLimitService chatRateLimitService;
     private final ChatClient chatClient;
+    private final ChatStudentTools studentTools;
+    private final ChatManagementTools managementTools;
+    private final ChatCommonTools commonTools;
 
     public ChatService(
             ChatMessageRepository chatMessageRepository,
             UserRepository userRepository,
             CurrentUserService currentUserService,
-            ChatIntentParser chatIntentParser,
-            ChatBusinessService chatBusinessService,
             ChatPromptBuilder chatPromptBuilder,
             ChatHistoryCacheService chatHistoryCacheService,
-            ChatClient.Builder chatClientBuilder) {
+            ChatRateLimitService chatRateLimitService,
+            ChatClient.Builder chatClientBuilder,
+            ChatStudentTools studentTools,
+            ChatManagementTools managementTools,
+            ChatCommonTools commonTools) {
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
         this.currentUserService = currentUserService;
-        this.chatIntentParser = chatIntentParser;
-        this.chatBusinessService = chatBusinessService;
         this.chatPromptBuilder = chatPromptBuilder;
         this.chatHistoryCacheService = chatHistoryCacheService;
+        this.chatRateLimitService = chatRateLimitService;
         this.chatClient = chatClientBuilder.build();
+        this.studentTools = studentTools;
+        this.managementTools = managementTools;
+        this.commonTools = commonTools;
     }
 
-    @Transactional
     public ChatMessageResponse sendMessage(String userMessage) {
+        long startNanos = System.nanoTime();
+        String validatedMessage = validateUserMessage(userMessage);
         UUID userId = currentUserService.getCurrentUserId();
+        chatRateLimitService.checkAllowed(userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
         List<ChatCacheMessage> chronological = new ArrayList<>(loadContextMessages(userId));
 
-        ChatMessage userMsg = saveMessage(user, MessageRole.USER, userMessage);
-        ChatCacheMessage userCache = toCacheMessage(userMsg);
-        chatHistoryCacheService.appendMessage(userId, userCache);
-        chronological.add(userCache);
-
-        if (isQuizAnswerRequest(userMessage)) {
+        if (isQuizAnswerRequest(validatedMessage)) {
             String blockedReply = "Xin lỗi, mình không thể trả lời câu hỏi hoặc cung cấp đáp án/giải cho bài quiz. "
                     + "Bạn hãy tự làm bài để đảm bảo công bằng nhé.";
+            ChatMessage userMsg = saveMessage(user, MessageRole.USER, validatedMessage);
+            appendToCache(userId, toCacheMessage(userMsg));
             ChatMessage assistantMsg = saveMessage(user, MessageRole.ASSISTANT, blockedReply);
-            chatHistoryCacheService.appendMessage(userId, toCacheMessage(assistantMsg));
+            appendToCache(userId, toCacheMessage(assistantMsg));
+            logChatRequest(userId, "BLOCKED_QUIZ", 0, validatedMessage, blockedReply, startNanos);
 
             return ChatMessageResponse.builder()
                     .id(assistantMsg.getId())
@@ -85,26 +98,19 @@ public class ChatService {
                     .build();
         }
 
-        ChatIntentAnalysis intent = chatIntentParser.parse(userMessage);
-        log.info("Chat intent parsed: {}", intent.types());
+        ChatMessage userMsg = saveMessage(user, MessageRole.USER, validatedMessage);
+        ChatCacheMessage userCache = toCacheMessage(userMsg);
+        appendToCache(userId, userCache);
+        chronological.add(userCache);
 
-        ChatRelevantData relevantData = chatBusinessService.findRelevantData(user, intent, userMessage);
-        log.info("Relevant data retrieved: {} chars", relevantData.content().length());
+        List<Message> messages = chatPromptBuilder.build(user, chronological);
+        int promptChars = promptChars(messages);
 
-        List<Message> messages = chatPromptBuilder.build(user, relevantData, chronological);
-
-        String aiReply;
-        try {
-            aiReply = chatClient.prompt(new Prompt(messages))
-                    .call()
-                    .content();
-        } catch (Exception e) {
-            log.error("Gemini API error: {}", e.getMessage(), e);
-            aiReply = "Xin lỗi, đã có lỗi xảy ra khi xử lý yêu cầu của bạn. Vui lòng thử lại sau.";
-        }
+        String aiReply = callLlmWithTools(messages, user);
 
         ChatMessage assistantMsg = saveMessage(user, MessageRole.ASSISTANT, aiReply);
-        chatHistoryCacheService.appendMessage(userId, toCacheMessage(assistantMsg));
+        appendToCache(userId, toCacheMessage(assistantMsg));
+        logChatRequest(userId, promptChars, validatedMessage, aiReply, startNanos);
 
         return ChatMessageResponse.builder()
                 .id(assistantMsg.getId())
@@ -114,35 +120,130 @@ public class ChatService {
                 .build();
     }
 
-    private boolean isQuizAnswerRequest(String message) {
-        String normalized = normalize(message);
-        boolean hasQuizKeyword = containsAny(normalized,
-                "quiz", "trac nghiem", "bai tap", "cau hoi", "bai kiem tra", "kiem tra");
-        boolean hasAnswerKeyword = containsAny(normalized,
-                "dap an", "loi giai", "giai bai", "giai cau", "chon dap an", "phuong an");
-        return hasQuizKeyword && hasAnswerKeyword;
+    private String validateUserMessage(String userMessage) {
+        if (userMessage == null || userMessage.isBlank()) {
+            throw new AppException(ErrorCode.INVALID_INPUT, "Nội dung tin nhắn không được để trống.");
+        }
+        String trimmed = userMessage.trim();
+        if (trimmed.length() > MAX_USER_MESSAGE_CHARS) {
+            throw new AppException(ErrorCode.MESSAGE_TOO_LONG,
+                    "Tin nhắn không được vượt quá " + MAX_USER_MESSAGE_CHARS + " ký tự.");
+        }
+        return trimmed;
     }
 
-    private String normalize(String value) {
+    private String callLlmWithTools(List<Message> messages, User user) {
+        SecurityContext securityContext = SecurityContextHolder.getContext();
+        Object[] tools = toolsForRole(user.getRole());
+        try {
+            return CompletableFuture
+                    .supplyAsync(() -> {
+                        SecurityContextHolder.setContext(securityContext);
+                        try {
+                            return chatClient.prompt(new Prompt(messages))
+                                    .tools(tools)
+                                    .call()
+                                    .content();
+                        } finally {
+                            SecurityContextHolder.clearContext();
+                        }
+                    })
+                    .get(LLM_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("LLM call timed out after {}s", LLM_TIMEOUT.toSeconds());
+            return "Yêu cầu mất quá nhiều thời gian. Bạn hãy thử lại nhé.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return handleLlmException(e);
+        } catch (ExecutionException e) {
+            return handleLlmException(e);
+        }
+    }
+
+    private Object[] toolsForRole(UserRole role) {
+        return switch (role) {
+            case STUDENT -> new Object[]{studentTools, commonTools};
+            case INSTRUCTOR -> new Object[]{managementTools, commonTools};
+            case ADMIN -> new Object[]{managementTools, commonTools};
+        };
+    }
+
+    private String handleLlmException(Exception e) {
+        Throwable root = rootCause(e);
+        String msg = root.getMessage() != null ? root.getMessage() : "";
+        String lowerMsg = msg.toLowerCase();
+
+        if (lowerMsg.contains("429") || lowerMsg.contains("quota") || lowerMsg.contains("rate")) {
+            log.warn("LLM rate limit hit: {}", msg);
+            return "Hệ thống đang bận, vui lòng thử lại sau ít phút.";
+        }
+        if (lowerMsg.contains("timeout") || root instanceof TimeoutException) {
+            log.warn("LLM timeout: {}", msg);
+            return "Yêu cầu mất quá nhiều thời gian. Bạn hãy thử lại nhé.";
+        }
+        if (lowerMsg.contains("401") || lowerMsg.contains("403") || lowerMsg.contains("auth")) {
+            log.error("LLM auth error - check API key config: {}", msg);
+            return "Lỗi cấu hình hệ thống. Vui lòng liên hệ admin.";
+        }
+
+        log.error("LLM unexpected error: {}", msg, root);
+        return "Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.";
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private void appendToCache(UUID userId, ChatCacheMessage message) {
+        chatHistoryCacheService.appendMessage(userId, message);
+    }
+
+    private int promptChars(List<Message> messages) {
+        return messages.stream()
+                .map(Message::getText)
+                .filter(text -> text != null)
+                .mapToInt(String::length)
+                .sum();
+    }
+
+    private void logChatRequest(UUID userId, String intentKey, int promptChars,
+            String question, String reply, long startNanos) {
+        long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+        log.info("Chat request completed userId={} intent={} promptChars={} replyChars={} "
+                        + "latencyMs={} question=\"{}\" reply=\"{}\"",
+                userId, intentKey, promptChars,
+                reply == null ? 0 : reply.length(), latencyMs,
+                forLog(question), forLog(reply));
+    }
+
+    private void logChatRequest(UUID userId, int promptChars,
+            String question, String reply, long startNanos) {
+        logChatRequest(userId, "TOOL_CALLING", promptChars, question, reply, startNanos);
+    }
+
+    private String forLog(String value) {
         if (value == null) {
             return "";
         }
-        String normalized = value.toLowerCase(Locale.ROOT);
-        String decomposed = Normalizer.normalize(normalized, Normalizer.Form.NFD);
-        return decomposed.replaceAll("\\p{M}", "")
-                .replace('đ', 'd')
-                .replaceAll("\\s+", " ")
-                .trim();
+        String compact = value.replaceAll("\\s+", " ").trim();
+        return compact.length() <= MAX_LOG_TEXT_CHARS
+                ? compact
+                : compact.substring(0, MAX_LOG_TEXT_CHARS) + "...";
     }
 
-    private boolean containsAny(String value, String... keywords) {
-        for (String keyword : keywords) {
-            String normalizedKeyword = normalize(keyword);
-            if (value.contains(normalizedKeyword)) {
-                return true;
-            }
-        }
-        return false;
+    private boolean isQuizAnswerRequest(String message) {
+        String normalized = ChatTextUtils.normalize(message);
+        // Best-effort UX guard only. Actual answer secrecy must be enforced by quiz APIs/data access rules.
+        boolean hasQuizKeyword = ChatTextUtils.containsAny(normalized,
+                "quiz", "trac nghiem", "bai tap", "cau hoi", "cau ", "bai kiem tra", "kiem tra");
+        boolean hasAnswerKeyword = ChatTextUtils.containsAny(normalized,
+                "dap an", "loi giai", "giai bai", "giai cau", "chon dap an", "chon phuong an",
+                "phuong an", "phuong an nao dung", "cau nao dung", "cau nao la dung");
+        return hasQuizKeyword && hasAnswerKeyword;
     }
 
     @Transactional(readOnly = true)
@@ -171,7 +272,8 @@ public class ChatService {
         chatHistoryCacheService.clear(user.getId());
     }
 
-    private ChatMessage saveMessage(User user, MessageRole role, String content) {
+    @Transactional
+    protected ChatMessage saveMessage(User user, MessageRole role, String content) {
         ChatMessage msg = ChatMessage.builder()
                 .user(user)
                 .role(role)
