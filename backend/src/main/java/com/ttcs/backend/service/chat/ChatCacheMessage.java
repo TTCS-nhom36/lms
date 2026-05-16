@@ -1,4 +1,4 @@
-package com.ttcs.backend.service.chat.model;
+package com.ttcs.backend.service.chat;
 
 import com.ttcs.backend.entity.ChatMessage.MessageRole;
 import java.time.LocalDateTime;

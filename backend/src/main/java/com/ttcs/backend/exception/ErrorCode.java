@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
 	BAD_REQUEST(400, HttpStatus.BAD_REQUEST, "Bad request"),
+	INVALID_INPUT(400, HttpStatus.BAD_REQUEST, "Invalid input"),
+	MESSAGE_TOO_LONG(400, HttpStatus.BAD_REQUEST, "Message too long"),
 	VALIDATION_ERROR(400, HttpStatus.BAD_REQUEST, "Validation failed"),
 	NOT_FOUND(404, HttpStatus.NOT_FOUND, "Resource not found"),
 	INTERNAL_SERVER_ERROR(500, HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error"),
