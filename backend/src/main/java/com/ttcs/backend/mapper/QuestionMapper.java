@@ -19,6 +19,14 @@ public class QuestionMapper {
     }
 
     public QuestionResponse toResponse(Question question) {
+        return toResponse(question, true);
+    }
+
+    public QuestionResponse toStudentResponse(Question question) {
+        return toResponse(question, false);
+    }
+
+    private QuestionResponse toResponse(Question question, boolean includeCorrectAnswers) {
         if (question == null) {
             return null;
         }
@@ -31,8 +39,11 @@ public class QuestionMapper {
                 .orderIndex(question.getOrderIndex())
                 .score(question.getScore())
                 //
-                .options(question.getOptions() != null ? 
-                    question.getOptions().stream().map(questionOptionMapper::toResponse).collect(Collectors.toList()) : null)
+                .options(question.getOptions() != null ? question.getOptions().stream()
+                        .map(option -> includeCorrectAnswers
+                                ? questionOptionMapper.toResponse(option)
+                                : questionOptionMapper.toResponseWithoutCorrectAnswer(option))
+                        .collect(Collectors.toList()) : null)
                 //
                 .build();
     }

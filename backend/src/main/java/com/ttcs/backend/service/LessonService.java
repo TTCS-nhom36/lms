@@ -8,6 +8,7 @@ import com.ttcs.backend.entity.Chapter;
 import com.ttcs.backend.entity.LessonProgress;
 import com.ttcs.backend.entity.Lesson;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.enums.EnrollmentStatus;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.LessonMapper;
@@ -67,15 +68,19 @@ public class LessonService {
 
     @Transactional(readOnly = true)
     public List<LessonResponse> findByChapterId(Long chapterId, UUID userId) {
-        return lessonRepository.findAll().stream()
-                .filter(lesson -> lesson.getChapter() != null && chapterId.equals(lesson.getChapter().getId()))
+        return lessonRepository.findByChapterId(chapterId).stream()
                 .map(lesson -> {
                     LessonProgress progress = null;
                     if (userId != null) {
                         progress = lessonProgressRepository.findByLessonIdAndUserId(lesson.getId(), userId)
                                 .orElse(null);
                     }
-                    return lessonMapper.toResponse(lesson, progress);
+                    LessonResponse response = lessonMapper.toResponse(lesson, progress);
+                    if (!canViewLessonContent(lesson, userId)) {
+                        response.setContentUrl(null);
+                        response.setContentText(null);
+                    }
+                    return response;
                 })
                 .toList();
     }
@@ -88,8 +93,7 @@ public class LessonService {
     @Transactional(readOnly = true)
     public LessonResponse findAccessibleById(Long id, UUID userId) {
         Lesson lesson = findLessonEntityById(id);
-        if (Boolean.TRUE.equals(lesson.getIsFreePreview()) || hasAccess(lesson, userId)
-                || currentUserService.hasRole("ADMIN") || currentUserService.hasRole("INSTRUCTOR")) {
+        if (canViewLessonContent(lesson, userId)) {
             LessonProgress progress = null;
             if (userId != null) {
                 progress = lessonProgressRepository.findByLessonIdAndUserId(id, userId).orElse(null);
@@ -179,8 +183,7 @@ public class LessonService {
     @Transactional(readOnly = true)
     public String getDocumentPresignedUrl(Long lessonId, UUID userId) {
         Lesson lesson = findLessonEntityById(lessonId);
-        if (!Boolean.TRUE.equals(lesson.getIsFreePreview()) && !hasAccess(lesson, userId)
-                && !currentUserService.hasRole("ADMIN") && !currentUserService.hasRole("INSTRUCTOR")) {
+        if (!canViewLessonContent(lesson, userId)) {
             throw new AppException(ErrorCode.ACCESS_DENIED, "Lesson requires enrollment");
         }
         String s3Key = lesson.getContentUrl();
@@ -244,11 +247,19 @@ public class LessonService {
             return false;
         }
         Long courseId = lesson.getChapter().getCourse().getId();
-        return enrollmentRepository.findAll().stream()
+        return enrollmentRepository.findByUserId(userId).stream()
                 .anyMatch(enrollment -> enrollment.getUser() != null
                         && userId.equals(enrollment.getUser().getId())
                         && enrollment.getCourse() != null
-                        && courseId.equals(enrollment.getCourse().getId()));
+                        && courseId.equals(enrollment.getCourse().getId())
+                        && enrollment.getStatus() == EnrollmentStatus.ACTIVE);
+    }
+
+    private boolean canViewLessonContent(Lesson lesson, UUID userId) {
+        return Boolean.TRUE.equals(lesson.getIsFreePreview())
+                || hasAccess(lesson, userId)
+                || currentUserService.hasRole("ADMIN")
+                || canManageChapter(lesson.getChapter());
     }
 
     private void assertCanManageLesson(Lesson lesson) {
@@ -265,11 +276,18 @@ public class LessonService {
         if (currentUserService.hasRole("ADMIN")) {
             return;
         }
-        UUID currentUserId = currentUserService.getCurrentUserId();
-        if (chapter.getCourse().getCreatedBy() != null
-                && currentUserId.equals(chapter.getCourse().getCreatedBy().getId())) {
+        if (canManageChapter(chapter)) {
             return;
         }
         throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this course");
+    }
+
+    private boolean canManageChapter(Chapter chapter) {
+        if (chapter == null || chapter.getCourse() == null) {
+            return false;
+        }
+        UUID currentUserId = currentUserService.getCurrentUserId();
+        return chapter.getCourse().getCreatedBy() != null
+                && currentUserId.equals(chapter.getCourse().getCreatedBy().getId());
     }
 }

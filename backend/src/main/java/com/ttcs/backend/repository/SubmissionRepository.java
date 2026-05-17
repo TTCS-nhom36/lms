@@ -22,6 +22,9 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
 	/** Tất cả submission của một học sinh cho một assignment */
 	List<Submission> findByUserIdAndAssignmentId(UUID userId, Long assignmentId);
 
+	@EntityGraph(attributePaths = {"assignment", "assignment.course", "user", "gradedBy"})
+	List<Submission> findByAssignmentId(Long assignmentId);
+
 	@EntityGraph(attributePaths = {"assignment", "assignment.course", "user"})
 	List<Submission> findByUserId(UUID userId);
 

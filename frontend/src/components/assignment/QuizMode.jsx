@@ -106,19 +106,25 @@ function ActiveQuiz({ questions, selectedAnswers, answeredCount, timeLeft, timer
   );
 }
 
-function QuizStart({ assignment, isPastDue, submitting, onStart }) {
+function QuizStart({ assignment, quizAttempt, isPastDue, submitting, onStart, onContinue }) {
+  const hasStartedAttempt = Boolean(quizAttempt);
+
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-6 text-center">
       <ClipboardList size={40} className="text-neutral-300 mx-auto mb-3" />
-      <p className="text-neutral-700 mb-2 font-medium">Ready to take this quiz?</p>
-      <p className="text-xs text-neutral-500 mb-4">You can submit this quiz only once.</p>
+      <p className="text-neutral-700 mb-2 font-medium">
+        {hasStartedAttempt ? 'Continue your quiz?' : 'Ready to take this quiz?'}
+      </p>
+      <p className="text-xs text-neutral-500 mb-4">
+        {hasStartedAttempt ? 'You started this quiz but have not submitted it yet.' : 'You can submit this quiz only once.'}
+      </p>
       {assignment.timeLimitMins > 0 && (
         <p className="text-sm text-amber-500 mb-5 flex items-center justify-center gap-1">
           <Clock size={14} /> Time limit: {assignment.timeLimitMins} minutes - timer starts when you begin
         </p>
       )}
-      <Button onClick={onStart} disabled={submitting || isPastDue}>
-        <PlayCircle size={16} /> {submitting ? 'Starting...' : 'Start Quiz'}
+      <Button onClick={hasStartedAttempt ? onContinue : onStart} disabled={submitting || isPastDue}>
+        <PlayCircle size={16} /> {submitting ? 'Loading...' : hasStartedAttempt ? 'Continue Quiz' : 'Start Quiz'}
       </Button>
       {isPastDue && <p className="text-xs text-rose-400 mt-3">This quiz is past due.</p>}
     </div>
@@ -146,5 +152,14 @@ export default function QuizMode(props) {
     );
   }
 
-  return <QuizStart assignment={props.assignment} isPastDue={props.isPastDue} submitting={props.submitting} onStart={props.onStart} />;
+  return (
+    <QuizStart
+      assignment={props.assignment}
+      quizAttempt={props.quizAttempt}
+      isPastDue={props.isPastDue}
+      submitting={props.submitting}
+      onStart={props.onStart}
+      onContinue={props.onContinue}
+    />
+  );
 }

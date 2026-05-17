@@ -17,6 +17,7 @@ import com.ttcs.backend.entity.Lesson;
 import com.ttcs.backend.entity.Question;
 import com.ttcs.backend.entity.Submission;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.enums.EnrollmentStatus;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.AssignmentMapper;
@@ -69,8 +70,7 @@ public class AssignmentService {
 
     @Transactional(readOnly = true)
     public List<AssignmentResponse> findByCourseId(Long courseId) {
-        return assignmentRepository.findAll().stream()
-                .filter(assignment -> assignment.getCourse() != null && courseId.equals(assignment.getCourse().getId()))
+        return assignmentRepository.findByCourseId(courseId).stream()
                 .map(assignmentMapper::toResponse)
                 .toList();
     }
@@ -154,17 +154,14 @@ public class AssignmentService {
     @Transactional(readOnly = true)
     public List<SubmissionResponse> findSubmissions(Long assignmentId) {
         assertCanManageAssignment(findAssignmentEntityById(assignmentId));
-        return submissionRepository.findAll().stream()
-                .filter(submission -> submission.getAssignment() != null && assignmentId.equals(submission.getAssignment().getId()))
+        return submissionRepository.findByAssignmentId(assignmentId).stream()
                 .map(submissionMapper::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public SubmissionResponse findMySubmission(Long assignmentId, UUID userId) {
-        Submission submission = submissionRepository.findAll().stream()
-                .filter(item -> item.getAssignment() != null && assignmentId.equals(item.getAssignment().getId()))
-                .filter(item -> item.getUser() != null && userId.equals(item.getUser().getId()))
+        Submission submission = submissionRepository.findByUserIdAndAssignmentId(userId, assignmentId).stream()
                 .findFirst()
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Submission not found for this user"));
         return submissionMapper.toResponse(submission);
@@ -173,14 +170,15 @@ public class AssignmentService {
     @Transactional(readOnly = true)
     public List<QuestionResponse> findQuestions(Long assignmentId) {
         Assignment assignment = findAssignmentEntityById(assignmentId);
-        if (!currentUserService.hasRole("ADMIN")
-                && !currentUserService.hasRole("INSTRUCTOR")
-                && !hasEnrollment(assignment.getCourse(), currentUserService.getCurrentUserId())) {
+        boolean canManage = currentUserService.hasRole("ADMIN")
+                || (assignment.getCourse() != null
+                && assignment.getCourse().getCreatedBy() != null
+                && currentUserService.getCurrentUserId().equals(assignment.getCourse().getCreatedBy().getId()));
+        if (!canManage && !hasActiveEnrollment(assignment.getCourse(), currentUserService.getCurrentUserId())) {
             throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
         }
-        return questionRepository.findAll().stream()
-                .filter(question -> question.getAssignment() != null && assignmentId.equals(question.getAssignment().getId()))
-                .map(questionMapper::toResponse)
+        return questionRepository.findByAssignmentId(assignmentId).stream()
+                .map(canManage ? questionMapper::toResponse : questionMapper::toStudentResponse)
                 .toList();
     }
 
@@ -222,14 +220,15 @@ public class AssignmentService {
         throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this course");
     }
 
-    private boolean hasEnrollment(Course course, UUID userId) {
+    private boolean hasActiveEnrollment(Course course, UUID userId) {
         if (course == null || userId == null) {
             return false;
         }
-        return enrollmentRepository.findAll().stream()
+        return enrollmentRepository.findByUserId(userId).stream()
                 .anyMatch(enrollment -> enrollment.getUser() != null
                         && userId.equals(enrollment.getUser().getId())
                         && enrollment.getCourse() != null
-                        && course.getId().equals(enrollment.getCourse().getId()));
+                        && course.getId().equals(enrollment.getCourse().getId())
+                        && enrollment.getStatus() == EnrollmentStatus.ACTIVE);
     }
 }

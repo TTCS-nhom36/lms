@@ -21,4 +21,7 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 
 	@EntityGraph(attributePaths = {"user", "course"})
 	List<Enrollment> findByCourseId(Long courseId);
+
+	@EntityGraph(attributePaths = {"user", "course", "course.createdBy"})
+	List<Enrollment> findByCourseCreatedById(java.util.UUID createdById);
 }

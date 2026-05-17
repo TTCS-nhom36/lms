@@ -10,6 +10,7 @@ import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.repository.ChatMessageRepository;
 import com.ttcs.backend.repository.UserRepository;
 import com.ttcs.backend.service.CurrentUserService;
+import com.ttcs.backend.utils.ChatTextUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
