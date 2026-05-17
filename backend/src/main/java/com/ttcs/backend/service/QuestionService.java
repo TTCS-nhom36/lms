@@ -46,7 +46,9 @@ public class QuestionService {
 
     public QuestionResponse create(CreateQuestionRequest request) {
         Question question = questionMapper.toEntity(request);
-        question.setAssignment(findAssignmentById(request.getAssignmentId()));
+        Assignment assignment = findAssignmentById(request.getAssignmentId());
+        assertCanManageAssignment(assignment);
+        question.setAssignment(assignment);
         return questionMapper.toResponse(questionRepository.save(question));
     }
 

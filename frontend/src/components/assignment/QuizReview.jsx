@@ -3,15 +3,24 @@ import { CheckCircle, X } from 'lucide-react';
 export default function QuizReview({ questions, attemptResult }) {
   if (!attemptResult || !questions.length) return null;
 
-  const selectedIds = (questionId) => (attemptResult.answers || [])
-    .filter((answer) => answer.questionId === questionId)
-    .map((answer) => answer.selectedOptionId);
+  const sameId = (a, b) => String(a) === String(b);
+
+  const selectedAnswers = (questionId) => (attemptResult.answers || [])
+    .filter((answer) => sameId(answer.questionId, questionId));
+
+  const selectedIds = (questionId) => selectedAnswers(questionId)
+    .map((answer) => String(answer.selectedOptionId));
 
   const isCorrect = (question) => {
+    const answers = selectedAnswers(question.id);
     const selectedOptionIds = selectedIds(question.id);
     const correctOptionIds = (question.options || [])
-      .filter((option) => option.isCorrect)
-      .map((option) => option.id);
+      .filter((option) => option.isCorrect === true)
+      .map((option) => String(option.id));
+
+    if (correctOptionIds.length === 0) {
+      return answers.length > 0 && answers.every((answer) => answer.isCorrect === true);
+    }
 
     return selectedOptionIds.length > 0
       && selectedOptionIds.length === correctOptionIds.length
@@ -27,10 +36,11 @@ export default function QuizReview({ questions, attemptResult }) {
 
       <div className="space-y-4">
         {questions.map((question, idx) => {
+          const answers = selectedAnswers(question.id);
           const selectedOptionIds = selectedIds(question.id);
           const correctOptionIds = (question.options || [])
-            .filter((option) => option.isCorrect)
-            .map((option) => option.id);
+            .filter((option) => option.isCorrect === true)
+            .map((option) => String(option.id));
           const answeredCorrectly = isCorrect(question);
           const isAnswered = selectedOptionIds.length > 0;
 
@@ -61,8 +71,9 @@ export default function QuizReview({ questions, attemptResult }) {
 
               <div className="space-y-2">
                 {question.options?.map((option) => {
-                  const isSelected = selectedOptionIds.includes(option.id);
-                  const isCorrectOption = correctOptionIds.includes(option.id);
+                  const selectedAnswer = answers.find((answer) => sameId(answer.selectedOptionId, option.id));
+                  const isSelected = selectedOptionIds.includes(String(option.id));
+                  const isCorrectOption = correctOptionIds.includes(String(option.id)) || selectedAnswer?.isCorrect === true;
                   let optionClasses = 'bg-white border-neutral-200 text-neutral-700';
                   if (isCorrectOption && isSelected) optionClasses = 'bg-emerald-100 border-emerald-300 text-emerald-900';
                   else if (isCorrectOption) optionClasses = 'bg-emerald-50 border-emerald-200 text-emerald-900';

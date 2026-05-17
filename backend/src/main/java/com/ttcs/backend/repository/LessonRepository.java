@@ -18,4 +18,7 @@ public interface LessonRepository extends JpaRepository<Lesson, Long> {
 
 	@EntityGraph(attributePaths = {"chapter", "chapter.course", "unlockCondition"})
 	List<Lesson> findByChapterCourseIdIn(List<Long> courseIds);
+
+	@EntityGraph(attributePaths = {"chapter", "chapter.course", "unlockCondition"})
+	List<Lesson> findByChapterId(Long chapterId);
 }

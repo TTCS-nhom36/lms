@@ -38,8 +38,7 @@ public class ChapterService {
 
     @Transactional(readOnly = true)
     public List<ChapterResponse> findByCourseId(Long courseId) {
-        return chapterRepository.findAll().stream()
-                .filter(chapter -> chapter.getCourse() != null && courseId.equals(chapter.getCourse().getId()))
+        return chapterRepository.findByCourseIdOrderByOrderIndex(courseId).stream()
                 .map(chapterMapper::toResponse)
                 .sorted((left, right) -> Integer.compare(
                         left.getOrderIndex() != null ? left.getOrderIndex() : Integer.MAX_VALUE,
@@ -87,8 +86,7 @@ public class ChapterService {
             .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + courseId));
         assertCanManageCourse(course);
         List<Long> chapterIds = request != null && request.getChapterIds() != null ? request.getChapterIds() : List.of();
-        List<Chapter> chapters = chapterRepository.findAll().stream()
-                .filter(chapter -> chapter.getCourse() != null && courseId.equals(chapter.getCourse().getId()))
+        List<Chapter> chapters = chapterRepository.findByCourseIdOrderByOrderIndex(courseId).stream()
                 .filter(chapter -> chapterIds.contains(chapter.getId()))
                 .toList();
         for (int index = 0; index < chapterIds.size(); index++) {

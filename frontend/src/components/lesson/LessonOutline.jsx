@@ -55,10 +55,19 @@ export default function LessonOutline({
                     >
                       <Icon size={15} className={active ? 'text-white' : 'text-neutral-400'} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{item.title || 'Untitled lesson'}</p>
-                        <p className={`text-[11px] ${active ? 'text-white/70' : 'text-neutral-400'}`}>
-                          Lesson {lessonIndex + 1}
+                        <p className={`truncate text-sm font-semibold ${
+                          item.isCompleted && !active ? 'text-emerald-700' : ''
+                        }`}>
+                          {item.title || 'Untitled lesson'}
                         </p>
+                        <div className={`flex items-center gap-2 text-[11px] ${active ? 'text-white/70' : 'text-neutral-400'}`}>
+                          <span>Lesson {lessonIndex + 1}</span>
+                          {item.isCompleted && (
+                            <span className={active ? 'font-semibold text-white' : 'font-semibold text-emerald-600'}>
+                              Completed
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {item.isCompleted && <CheckCircle size={14} className={active ? 'text-white' : 'text-emerald-500'} />}
                     </button>

@@ -50,6 +50,7 @@ public class StatsService {
 	private final AssignmentRepository assignmentRepository;
 	private final SubmissionRepository submissionRepository;
 	private final UserRepository userRepository;
+	private final CurrentUserService currentUserService;
 
 	public StatsService(CourseRepository courseRepository,
 			EnrollmentRepository enrollmentRepository,
@@ -57,7 +58,8 @@ public class StatsService {
 			LessonProgressRepository lessonProgressRepository,
 			AssignmentRepository assignmentRepository,
 			SubmissionRepository submissionRepository,
-			UserRepository userRepository) {
+			UserRepository userRepository,
+			CurrentUserService currentUserService) {
 		this.courseRepository = courseRepository;
 		this.enrollmentRepository = enrollmentRepository;
 		this.lessonRepository = lessonRepository;
@@ -65,6 +67,7 @@ public class StatsService {
 		this.assignmentRepository = assignmentRepository;
 		this.submissionRepository = submissionRepository;
 		this.userRepository = userRepository;
+		this.currentUserService = currentUserService;
 	}
 
 	public CourseOverviewResponse getCourseOverview(Long courseId) {
@@ -186,10 +189,11 @@ public class StatsService {
 	}
 
 	public StudentProgressResponse getStudentProgress(UUID studentId) {
+		assertCanAccessStudentStats(studentId);
 		User student = findStudent(studentId);
-		List<Enrollment> enrollments = enrollmentRepository.findAll().stream()
-				.filter(enrollment -> enrollment.getUser() != null && studentId.equals(enrollment.getUser().getId()))
+		List<Enrollment> enrollments = enrollmentRepository.findByUserId(studentId).stream()
 				.filter(enrollment -> enrollment.getStatus() != EnrollmentStatus.DROPPED)
+				.filter(enrollment -> canIncludeStudentCourse(enrollment.getCourse(), studentId))
 				.toList();
 		List<StudentCourseProgressResponse> courseProgresses = enrollments.stream()
 				.map(enrollment -> buildStudentCourseProgress(studentId, enrollment.getCourse()))
@@ -201,9 +205,12 @@ public class StatsService {
 	}
 
 	public StudentScoresResponse getStudentScores(UUID studentId) {
+		assertCanAccessStudentStats(studentId);
 		User student = findStudent(studentId);
-		List<Submission> submissions = submissionRepository.findAll().stream()
-				.filter(submission -> submission.getUser() != null && studentId.equals(submission.getUser().getId()))
+		List<Submission> submissions = submissionRepository.findByUserId(studentId).stream()
+				.filter(submission -> canIncludeStudentCourse(
+						submission.getAssignment() != null ? submission.getAssignment().getCourse() : null,
+						studentId))
 				.sorted(Comparator.comparing(Submission::getSubmittedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
 				.toList();
 		List<StudentScoreItemResponse> items = submissions.stream()
@@ -254,32 +261,19 @@ public class StatsService {
 	private CourseSnapshot loadCourseSnapshot(Long courseId) {
 		Course course = courseRepository.findById(courseId)
 				.orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Course not found: " + courseId));
-		List<Enrollment> activeEnrollments = enrollmentRepository.findAll().stream()
-				.filter(enrollment -> enrollment.getCourse() != null && courseId.equals(enrollment.getCourse().getId()))
+		assertCanManageCourse(course);
+		List<Enrollment> activeEnrollments = enrollmentRepository.findByCourseId(courseId).stream()
 				.filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ACTIVE)
 				.toList();
-		List<Lesson> lessons = lessonRepository.findAll().stream()
-				.filter(lesson -> lesson.getChapter() != null
-						&& lesson.getChapter().getCourse() != null
-						&& courseId.equals(lesson.getChapter().getCourse().getId()))
-				.toList();
-		List<Assignment> assignments = assignmentRepository.findAll().stream()
-				.filter(assignment -> assignment.getCourse() != null && courseId.equals(assignment.getCourse().getId()))
-				.toList();
-		List<LessonProgress> progresses = lessonProgressRepository.findAll().stream()
+		List<Lesson> lessons = lessonRepository.findByChapterCourseIdIn(List.of(courseId));
+		List<Assignment> assignments = assignmentRepository.findByCourseId(courseId);
+		List<LessonProgress> progresses = lessonProgressRepository.findByLessonChapterCourseIdIn(List.of(courseId)).stream()
 				.filter(progress -> progress.getUser() != null && activeEnrollments.stream().anyMatch(enrollment -> enrollment.getUser() != null && enrollment.getUser().getId().equals(progress.getUser().getId())))
-				.filter(progress -> progress.getLesson() != null
-						&& progress.getLesson().getChapter() != null
-						&& progress.getLesson().getChapter().getCourse() != null
-						&& courseId.equals(progress.getLesson().getChapter().getCourse().getId()))
 				.toList();
 		List<LessonProgress> completedLessonProgress = progresses.stream()
 				.filter(progress -> Boolean.TRUE.equals(progress.getIsCompleted()))
 				.toList();
-		List<Submission> submissions = submissionRepository.findAll().stream()
-				.filter(submission -> submission.getAssignment() != null
-						&& submission.getAssignment().getCourse() != null
-						&& courseId.equals(submission.getAssignment().getCourse().getId()))
+		List<Submission> submissions = submissionRepository.findByAssignmentCourseIdIn(List.of(courseId)).stream()
 				.filter(submission -> submission.getUser() != null && activeEnrollments.stream().anyMatch(enrollment -> enrollment.getUser() != null && enrollment.getUser().getId().equals(submission.getUser().getId())))
 				.toList();
 		return new CourseSnapshot(course, activeEnrollments, lessons, assignments, progresses, completedLessonProgress, submissions);
@@ -289,26 +283,13 @@ public class StatsService {
 		if (course == null) {
 			return new StudentCourseProgressResponse(null, null, 0, 0, 0, 0, 0.0, 0.0);
 		}
-		List<Lesson> lessons = lessonRepository.findAll().stream()
-				.filter(lesson -> lesson.getChapter() != null
-						&& lesson.getChapter().getCourse() != null
-						&& course.getId().equals(lesson.getChapter().getCourse().getId()))
-				.toList();
-		List<Assignment> assignments = assignmentRepository.findAll().stream()
-				.filter(assignment -> assignment.getCourse() != null && course.getId().equals(assignment.getCourse().getId()))
-				.toList();
-		List<LessonProgress> progresses = lessonProgressRepository.findAll().stream()
+		List<Lesson> lessons = lessonRepository.findByChapterCourseIdIn(List.of(course.getId()));
+		List<Assignment> assignments = assignmentRepository.findByCourseId(course.getId());
+		List<LessonProgress> progresses = lessonProgressRepository.findByLessonChapterCourseIdIn(List.of(course.getId())).stream()
 				.filter(progress -> progress.getUser() != null && studentId.equals(progress.getUser().getId()))
-				.filter(progress -> progress.getLesson() != null
-						&& progress.getLesson().getChapter() != null
-						&& progress.getLesson().getChapter().getCourse() != null
-						&& course.getId().equals(progress.getLesson().getChapter().getCourse().getId()))
 				.toList();
-		List<Submission> submissions = submissionRepository.findAll().stream()
+		List<Submission> submissions = submissionRepository.findByAssignmentCourseIdIn(List.of(course.getId())).stream()
 				.filter(submission -> submission.getUser() != null && studentId.equals(submission.getUser().getId()))
-				.filter(submission -> submission.getAssignment() != null
-						&& submission.getAssignment().getCourse() != null
-						&& course.getId().equals(submission.getAssignment().getCourse().getId()))
 				.toList();
 		long completedLessons = progresses.stream().filter(progress -> Boolean.TRUE.equals(progress.getIsCompleted())).count();
 		long submittedAssignments = submissions.stream()
@@ -330,6 +311,48 @@ public class StatsService {
 			throw new AppException(ErrorCode.BAD_REQUEST, "User is not a student: " + studentId);
 		}
 		return student;
+	}
+
+	private void assertCanManageCourse(Course course) {
+		if (currentUserService.hasRole("ADMIN")) {
+			return;
+		}
+		UUID currentUserId = currentUserService.getCurrentUserId();
+		if (course.getCreatedBy() != null && currentUserId.equals(course.getCreatedBy().getId())) {
+			return;
+		}
+		throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to view stats for this course");
+	}
+
+	private void assertCanAccessStudentStats(UUID studentId) {
+		UUID currentUserId = currentUserService.getCurrentUserId();
+		if (currentUserId.equals(studentId)) {
+			return;
+		}
+		if (currentUserService.hasRole("ADMIN")) {
+			return;
+		}
+		if (currentUserService.hasRole("INSTRUCTOR")) {
+			boolean managesStudent = enrollmentRepository.findByCourseCreatedById(currentUserId).stream()
+					.anyMatch(enrollment -> enrollment.getUser() != null
+							&& studentId.equals(enrollment.getUser().getId())
+							&& enrollment.getStatus() == EnrollmentStatus.ACTIVE);
+			if (managesStudent) {
+				return;
+			}
+		}
+		throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to view stats for this student");
+	}
+
+	private boolean canIncludeStudentCourse(Course course, UUID studentId) {
+		UUID currentUserId = currentUserService.getCurrentUserId();
+		if (currentUserId.equals(studentId) || currentUserService.hasRole("ADMIN")) {
+			return true;
+		}
+		return currentUserService.hasRole("INSTRUCTOR")
+				&& course != null
+				&& course.getCreatedBy() != null
+				&& currentUserId.equals(course.getCreatedBy().getId());
 	}
 
 	private long countActiveViewers(List<Enrollment> activeEnrollments, List<LessonProgress> progresses) {

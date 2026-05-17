@@ -20,11 +20,13 @@ public class QuestionOptionService {
     private final QuestionOptionRepository questionOptionRepository;
     private final QuestionRepository questionRepository;
     private final QuestionOptionMapper questionOptionMapper;
+    private final CurrentUserService currentUserService;
 
-    public QuestionOptionService(QuestionOptionRepository questionOptionRepository, QuestionRepository questionRepository, QuestionOptionMapper questionOptionMapper) {
+    public QuestionOptionService(QuestionOptionRepository questionOptionRepository, QuestionRepository questionRepository, QuestionOptionMapper questionOptionMapper, CurrentUserService currentUserService) {
         this.questionOptionRepository = questionOptionRepository;
         this.questionRepository = questionRepository;
         this.questionOptionMapper = questionOptionMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -39,13 +41,18 @@ public class QuestionOptionService {
 
     public QuestionOptionResponse create(QuestionOptionRequest request) {
         QuestionOption questionOption = questionOptionMapper.toEntity(request);
-        questionOption.setQuestion(findQuestionById(request.getQuestionId()));
+        Question question = findQuestionById(request.getQuestionId());
+        assertCanManageQuestion(question);
+        questionOption.setQuestion(question);
         return questionOptionMapper.toResponse(questionOptionRepository.save(questionOption));
     }
 
     public QuestionOptionResponse update(Long id, QuestionOptionRequest request) {
         QuestionOption questionOption = findQuestionOptionEntityById(id);
-        questionOption.setQuestion(findQuestionById(request.getQuestionId()));
+        assertCanManageQuestion(questionOption.getQuestion());
+        Question question = findQuestionById(request.getQuestionId());
+        assertCanManageQuestion(question);
+        questionOption.setQuestion(question);
         questionOption.setContent(request.getContent());
         questionOption.setIsCorrect(request.getIsCorrect());
         questionOption.setOrderIndex(request.getOrderIndex());
@@ -53,7 +60,9 @@ public class QuestionOptionService {
     }
 
     public void delete(Long id) {
-        questionOptionRepository.delete(findQuestionOptionEntityById(id));
+        QuestionOption questionOption = findQuestionOptionEntityById(id);
+        assertCanManageQuestion(questionOption.getQuestion());
+        questionOptionRepository.delete(questionOption);
     }
 
     private QuestionOption findQuestionOptionEntityById(Long id) {
@@ -64,5 +73,20 @@ public class QuestionOptionService {
     private Question findQuestionById(Long id) {
         return questionRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Question not found: " + id));
+    }
+
+    private void assertCanManageQuestion(Question question) {
+        if (question == null || question.getAssignment() == null || question.getAssignment().getCourse() == null) {
+            throw new AppException(ErrorCode.NOT_FOUND, "Question not found");
+        }
+        if (currentUserService.hasRole("ADMIN")) {
+            return;
+        }
+        java.util.UUID currentUserId = currentUserService.getCurrentUserId();
+        if (question.getAssignment().getCourse().getCreatedBy() != null
+                && currentUserId.equals(question.getAssignment().getCourse().getCreatedBy().getId())) {
+            return;
+        }
+        throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this question option");
     }
 }
