@@ -27,6 +27,8 @@ import com.ttcs.backend.dto.response.GradebookResponse;
 import com.ttcs.backend.dto.response.PageResponse;
 import com.ttcs.backend.dto.response.UserResponse;
 import com.ttcs.backend.enums.CourseStatus;
+import com.ttcs.backend.exception.AppException;
+import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.EnrollmentMapper;
 import com.ttcs.backend.service.CourseService;
 import com.ttcs.backend.service.CurrentUserService;
@@ -149,8 +151,12 @@ public class CourseController {
 
     @GetMapping("/s3-image")
     public ResponseEntity<byte[]> getS3Image(@RequestParam("key") String key) {
-        byte[] imageBytes = s3Service.getFileBytes(key);
-        String contentType = s3Service.getFileContentType(key);
+        String objectKey = s3Service.getObjectKey(key);
+        if (objectKey == null || !objectKey.startsWith("thumbnails/")) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Only course thumbnails can be loaded here");
+        }
+        byte[] imageBytes = s3Service.getFileBytes(objectKey);
+        String contentType = s3Service.getFileContentType(objectKey);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType != null ? contentType : "image/jpeg"))
                 .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")

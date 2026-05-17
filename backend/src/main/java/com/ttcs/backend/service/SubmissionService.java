@@ -7,10 +7,12 @@ import com.ttcs.backend.entity.Assignment;
 import com.ttcs.backend.entity.QuizAttempt;
 import com.ttcs.backend.entity.Submission;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.enums.EnrollmentStatus;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.SubmissionMapper;
 import com.ttcs.backend.repository.AssignmentRepository;
+import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.QuizAttemptRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
@@ -32,15 +34,17 @@ public class SubmissionService {
     private final AssignmentRepository assignmentRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final UserRepository userRepository;
+    private final EnrollmentRepository enrollmentRepository;
     private final SubmissionMapper submissionMapper;
     private final S3Service s3Service;
     private final CurrentUserService currentUserService;
 
-    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, QuizAttemptRepository quizAttemptRepository, UserRepository userRepository, SubmissionMapper submissionMapper, S3Service s3Service, CurrentUserService currentUserService) {
+    public SubmissionService(SubmissionRepository submissionRepository, AssignmentRepository assignmentRepository, QuizAttemptRepository quizAttemptRepository, UserRepository userRepository, EnrollmentRepository enrollmentRepository, SubmissionMapper submissionMapper, S3Service s3Service, CurrentUserService currentUserService) {
         this.submissionRepository = submissionRepository;
         this.assignmentRepository = assignmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.userRepository = userRepository;
+        this.enrollmentRepository = enrollmentRepository;
         this.submissionMapper = submissionMapper;
         this.s3Service = s3Service;
         this.currentUserService = currentUserService;
@@ -71,6 +75,7 @@ public class SubmissionService {
 
     public SubmissionResponse create(SubmitRequest request) {
         Assignment assignment = findAssignmentById(request.getAssignmentId());
+        assertCanSubmitAssignment(assignment, request.getUserId());
         return createForAssignment(request, assignment);
     }
 
@@ -129,6 +134,7 @@ public class SubmissionService {
     }
 
     public void deleteMySubmission(Long assignmentId, UUID userId) {
+        assertActiveEnrollment(findAssignmentById(assignmentId), userId);
         List<Submission> submissions = submissionRepository.findByUserIdAndAssignmentId(userId, assignmentId);
         if (submissions.isEmpty()) {
             throw new AppException(ErrorCode.NOT_FOUND, "Submission not found for this user");
@@ -160,6 +166,7 @@ public class SubmissionService {
     @Transactional(readOnly = true)
     public String getSubmissionFileUrl(Long submissionId) {
         Submission submission = findSubmissionEntityById(submissionId);
+        assertCanAccessSubmission(submission);
         String key = submission.getFileUrl();
         if (key == null || key.isBlank()) {
             throw new AppException(ErrorCode.NOT_FOUND, "No file attached to this submission");
@@ -215,5 +222,40 @@ public class SubmissionService {
             return;
         }
         throw new AppException(ErrorCode.ACCESS_DENIED, "You are not allowed to manage this submission");
+    }
+
+    private void assertCanSubmitAssignment(Assignment assignment, UUID userId) {
+        assertActiveEnrollment(assignment, userId);
+        if (Boolean.FALSE.equals(assignment.getAllowLate())
+                && assignment.getDueDate() != null
+                && LocalDateTime.now().isAfter(assignment.getDueDate())) {
+            throw new AppException(ErrorCode.BAD_REQUEST, "Assignment no longer accepts submissions");
+        }
+    }
+
+    private void assertActiveEnrollment(Assignment assignment, UUID userId) {
+        if (assignment == null || assignment.getCourse() == null || userId == null) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
+        }
+        boolean enrolled = assignment.getCourse().getId() != null
+                && currentUserService.getCurrentUserId().equals(userId)
+                && currentUserService.hasRole("STUDENT")
+                && enrollmentRepository.findByUserId(userId).stream()
+                        .anyMatch(enrollment -> enrollment.getUser() != null
+                                && userId.equals(enrollment.getUser().getId())
+                                && enrollment.getCourse() != null
+                                && assignment.getCourse().getId().equals(enrollment.getCourse().getId())
+                                && enrollment.getStatus() == EnrollmentStatus.ACTIVE);
+        if (!enrolled) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires active enrollment");
+        }
+    }
+
+    private void assertCanAccessSubmission(Submission submission) {
+        UUID currentUserId = currentUserService.getCurrentUserId();
+        if (submission.getUser() != null && currentUserId.equals(submission.getUser().getId())) {
+            return;
+        }
+        assertCanManageAssignment(submission.getAssignment());
     }
 }

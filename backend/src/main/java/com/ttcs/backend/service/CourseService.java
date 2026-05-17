@@ -40,6 +40,7 @@ import com.ttcs.backend.repository.LessonProgressRepository;
 import com.ttcs.backend.repository.LessonRepository;
 import com.ttcs.backend.repository.SubmissionRepository;
 import com.ttcs.backend.repository.UserRepository;
+import com.ttcs.backend.utils.PageUtils;
 
 @Service
 @Transactional
@@ -88,7 +89,7 @@ public class CourseService {
                 .sorted(Comparator.comparing(Course::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .map(courseMapper::toResponse)
                 .toList();
-        return paginate(filteredCourses, page, size);
+        return PageUtils.paginate(filteredCourses, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -99,8 +100,7 @@ public class CourseService {
     @Transactional(readOnly = true)
     public CourseDetailResponse findDetail(Long id) {
         CourseResponse course = findById(id);
-        List<ChapterResponse> chapters = chapterRepository.findAll().stream()
-                .filter(chapter -> chapter.getCourse() != null && id.equals(chapter.getCourse().getId()))
+        List<ChapterResponse> chapters = chapterRepository.findByCourseIdOrderByOrderIndex(id).stream()
                 .sorted(Comparator.comparing(Chapter::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(chapterMapper::toResponse)
                 .toList();
@@ -137,6 +137,7 @@ public class CourseService {
 
     public CourseResponse archive(Long id) {
         Course course = findCourseEntityById(id);
+        assertCanManageCourse(course);
         course.setStatus(CourseStatus.ARCHIVED);
         return courseMapper.toResponse(courseRepository.save(course));
     }
@@ -162,8 +163,7 @@ public class CourseService {
     public void unenrollStudent(Long courseId, UUID userId) {
         Course course = findCourseEntityById(courseId);
         assertCanManageCourse(course);
-        Enrollment enrollment = enrollmentRepository.findAll().stream()
-                .filter(item -> item.getCourse() != null && courseId.equals(item.getCourse().getId()))
+        Enrollment enrollment = enrollmentRepository.findByCourseId(courseId).stream()
                 .filter(item -> item.getUser() != null && userId.equals(item.getUser().getId()))
                 .findFirst()
                 .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "Enrollment not found"));
@@ -174,8 +174,7 @@ public class CourseService {
     private EnrollmentResponse enrollIntoCourse(Course course, UUID userId) {
         Long courseId = course.getId();
         User user = findUserEntityById(userId);
-        Enrollment existingEnrollment = enrollmentRepository.findAll().stream()
-                .filter(enrollment -> enrollment.getCourse() != null && courseId.equals(enrollment.getCourse().getId()))
+        Enrollment existingEnrollment = enrollmentRepository.findByCourseId(courseId).stream()
                 .filter(enrollment -> enrollment.getUser() != null && userId.equals(enrollment.getUser().getId()))
                 .findFirst()
                 .orElse(null);
@@ -195,8 +194,7 @@ public class CourseService {
     @Transactional(readOnly = true)
     public List<UserResponse> findStudents(Long courseId) {
         assertCanManageCourse(findCourseEntityById(courseId));
-        return enrollmentRepository.findAll().stream()
-                .filter(enrollment -> enrollment.getCourse() != null && courseId.equals(enrollment.getCourse().getId()))
+        return enrollmentRepository.findByCourseId(courseId).stream()
                 .filter(enrollment -> enrollment.getStatus() != EnrollmentStatus.DROPPED)
                 .map(Enrollment::getUser)
                 .distinct()
@@ -206,8 +204,7 @@ public class CourseService {
 
     @Transactional(readOnly = true)
     public List<CourseResponse> findMyCourses(UUID userId) {
-        return enrollmentRepository.findAll().stream()
-                .filter(enrollment -> enrollment.getUser() != null && userId.equals(enrollment.getUser().getId()))
+        return enrollmentRepository.findByUserId(userId).stream()
                 .filter(enrollment -> enrollment.getStatus() != EnrollmentStatus.DROPPED)
                 .map(enrollment -> {
                     CourseResponse cr = courseMapper.toResponse(enrollment.getCourse());
@@ -219,16 +216,11 @@ public class CourseService {
     }
 
     private Double calculateCourseProgress(Long courseId, UUID userId) {
-        long totalLessons = lessonRepository.findAll().stream()
-            .filter(l -> l.getChapter() != null && l.getChapter().getCourse() != null &&
-                        courseId.equals(l.getChapter().getCourse().getId()))
+        long totalLessons = lessonRepository.findByChapterCourseIdIn(List.of(courseId)).stream()
             .count();
         if (totalLessons == 0) return 0.0;
-        long completedLessons = lessonProgressRepository.findAll().stream()
+        long completedLessons = lessonProgressRepository.findByLessonChapterCourseIdIn(List.of(courseId)).stream()
             .filter(p -> p.getUser() != null && userId.equals(p.getUser().getId()))
-            .filter(p -> p.getLesson() != null && p.getLesson().getChapter() != null &&
-                        p.getLesson().getChapter().getCourse() != null &&
-                        courseId.equals(p.getLesson().getChapter().getCourse().getId()))
             .filter(p -> Boolean.TRUE.equals(p.getIsCompleted()))
             .count();
         return Math.round((double) completedLessons * 100 / totalLessons * 10.0) / 10.0;
@@ -238,17 +230,9 @@ public class CourseService {
     public GradebookResponse findGradebook(Long courseId) {
         Course course = findCourseEntityById(courseId);
         assertCanManageCourse(course);
-        List<Assignment> assignments = assignmentRepository.findAll().stream()
-                .filter(assignment -> assignment.getCourse() != null && courseId.equals(assignment.getCourse().getId()))
-                .toList();
-        List<Enrollment> enrollments = enrollmentRepository.findAll().stream()
-                .filter(enrollment -> enrollment.getCourse() != null && courseId.equals(enrollment.getCourse().getId()))
-                .toList();
-        List<Submission> submissions = submissionRepository.findAll().stream()
-                .filter(submission -> submission.getAssignment() != null
-                        && submission.getAssignment().getCourse() != null
-                        && courseId.equals(submission.getAssignment().getCourse().getId()))
-                .toList();
+        List<Assignment> assignments = assignmentRepository.findByCourseId(courseId);
+        List<Enrollment> enrollments = enrollmentRepository.findByCourseId(courseId);
+        List<Submission> submissions = submissionRepository.findByAssignmentCourseIdIn(List.of(courseId));
 
         List<GradebookEntryResponse> entries = enrollments.stream()
                 .map(enrollment -> buildGradebookEntry(enrollment, assignments, submissions))
@@ -320,15 +304,6 @@ public class CourseService {
         String normalizedSearch = search.trim().toLowerCase();
         return (course.getTitle() != null && course.getTitle().toLowerCase().contains(normalizedSearch))
                 || (course.getDescription() != null && course.getDescription().toLowerCase().contains(normalizedSearch));
-    }
-
-    private PageResponse<CourseResponse> paginate(List<CourseResponse> items, int page, int size) {
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.max(size, 1);
-        int fromIndex = Math.min(safePage * safeSize, items.size());
-        int toIndex = Math.min(fromIndex + safeSize, items.size());
-        int totalPages = safeSize == 0 ? 0 : (int) Math.ceil((double) items.size() / safeSize);
-        return new PageResponse<>(items.subList(fromIndex, toIndex), safePage, safeSize, items.size(), totalPages);
     }
 
     private GradebookEntryResponse buildGradebookEntry(Enrollment enrollment, List<Assignment> assignments, List<Submission> submissions) {

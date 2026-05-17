@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import Avatar from '../ui/Avatar';
 import {
   Bell, LogOut, UserCircle2, ChevronDown, GraduationCap,
-  LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X, BarChart3, FileText,
+  LayoutDashboard, BookOpen, Compass, BookMarked, User, Menu, X, BarChart3,
 } from 'lucide-react';
 
 /* ─── Menu definitions ─── */
@@ -13,7 +13,6 @@ const adminMenu = [
   { label: 'Analytics', icon: BarChart3, path: '/admin/analytics' },
   { label: 'Users', icon: User, path: '/admin/users' },
   { label: 'Courses', icon: BookOpen, path: '/admin/courses' },
-  { label: 'Chatbot', icon: FileText, path: '/admin/documents' },
 ];
 
 const instructorMenu = [

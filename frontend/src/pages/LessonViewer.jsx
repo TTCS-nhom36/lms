@@ -3,14 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { courseApi } from '../api/courseApi';
 import { lessonApi } from '../api/lessonApi';
 import LessonContent from '../components/lesson/LessonContent';
-import LessonHeader from '../components/lesson/LessonHeader';
 import LessonOutline from '../components/lesson/LessonOutline';
 import { extractYoutubeId } from '../components/lesson/lessonUtils';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Button from '../components/ui/Button';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
-import { ArrowLeft, CheckCircle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 
 export default function LessonViewer() {
   const { courseId, lessonId } = useParams();
@@ -22,7 +21,6 @@ export default function LessonViewer() {
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [completing, setCompleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [documentUrl, setDocumentUrl] = useState(null);
   const [outline, setOutline] = useState([]);
@@ -33,10 +31,12 @@ export default function LessonViewer() {
   const watchSecsRef = useRef(0);
   const lessonIdRef = useRef(lessonId);
   const isCompletedRef = useRef(false);
+  const courseCompletedRef = useRef(false);
   const syncTimerRef = useRef(null);
   const tickTimerRef = useRef(null);
   const videoRef = useRef(null);
   const ytPlayerRef = useRef(null);
+  const autoCompletingLessonRef = useRef(null);
 
   useEffect(() => {
     watchSecsRef.current = progress.watchDurationSecs;
@@ -46,6 +46,17 @@ export default function LessonViewer() {
   useEffect(() => {
     lessonIdRef.current = lessonId;
   }, [lessonId]);
+
+  const updateOutlineLesson = useCallback((targetLessonId, patch) => {
+    setOutline((prev) =>
+      prev.map((chapter) => ({
+        ...chapter,
+        lessons: (chapter.lessons || []).map((item) =>
+          String(item.id) === String(targetLessonId) ? { ...item, ...patch } : item
+        ),
+      }))
+    );
+  }, []);
 
   const loadLesson = useCallback(async () => {
     try {
@@ -59,6 +70,7 @@ export default function LessonViewer() {
       setProgress(initial);
       watchSecsRef.current = initial.watchDurationSecs;
       isCompletedRef.current = initial.isCompleted;
+      updateOutlineLesson(data.id, initial);
       if (data.contentType === 'DOCUMENT' && data.contentUrl) {
         try {
           const urlRes = await lessonApi.getDocumentUrl(data.id);
@@ -74,7 +86,7 @@ export default function LessonViewer() {
     } finally {
       setLoading(false);
     }
-  }, [lessonId, toast]);
+  }, [lessonId, toast, updateOutlineLesson]);
 
   const loadOutline = useCallback(async () => {
     try {
@@ -120,7 +132,18 @@ export default function LessonViewer() {
     loadOutline();
   }, [courseId, loadOutline]);
 
+  useEffect(() => {
+    const lessons = outline.flatMap((chapter) => chapter.lessons || []);
+    courseCompletedRef.current = lessons.length > 0 && lessons.every((item) => item.isCompleted);
+  }, [outline]);
+
+  const shouldSkipProgressUpdate = useCallback(() => (
+    isCompletedRef.current || courseCompletedRef.current
+  ), []);
+
   const syncToBackend = useCallback(async (overrideCompleted = null) => {
+    if (overrideCompleted !== true && shouldSkipProgressUpdate()) return;
+
     const currentId = lessonIdRef.current;
     const secs = watchSecsRef.current;
     const completed = overrideCompleted !== null ? overrideCompleted : isCompletedRef.current;
@@ -132,7 +155,7 @@ export default function LessonViewer() {
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [shouldSkipProgressUpdate]);
 
   const startTickTimer = useCallback(() => {
     if (tickTimerRef.current) clearInterval(tickTimerRef.current);
@@ -154,9 +177,9 @@ export default function LessonViewer() {
   const startSyncTimer = useCallback(() => {
     if (syncTimerRef.current) clearInterval(syncTimerRef.current);
     syncTimerRef.current = setInterval(() => {
-      if (!isCompletedRef.current) syncToBackend();
+      if (!shouldSkipProgressUpdate()) syncToBackend();
     }, 30000);
-  }, [syncToBackend]);
+  }, [syncToBackend, shouldSkipProgressUpdate]);
 
   const stopSyncTimer = useCallback(() => {
     if (syncTimerRef.current) {
@@ -179,10 +202,9 @@ export default function LessonViewer() {
       stopSyncTimer();
       if (!isCompletedRef.current) syncToBackend();
     };
-  }, [lesson, progress.isCompleted, isStudent, startSyncTimer, startTickTimer, stopSyncTimer, stopTickTimer, syncToBackend]);
+  }, [lesson, progress.isCompleted, isStudent, startSyncTimer, startTickTimer, stopSyncTimer, stopTickTimer, syncToBackend, shouldSkipProgressUpdate]);
 
   const completeLesson = useCallback(async (watchDurationSecs) => {
-    setCompleting(true);
     try {
       const res = await lessonApi.complete(lessonIdRef.current);
       const data = res.data;
@@ -191,16 +213,18 @@ export default function LessonViewer() {
         watchDurationSecs: data?.watchDurationSecs ?? watchDurationSecs,
       });
       isCompletedRef.current = true;
+      updateOutlineLesson(lessonIdRef.current, {
+        isCompleted: true,
+        watchDurationSecs: data?.watchDurationSecs ?? watchDurationSecs,
+      });
       stopTickTimer();
       stopSyncTimer();
       toast.success('Lesson completed!');
     } catch (err) {
       console.error(err);
       toast.error('Could not mark lesson as completed');
-    } finally {
-      setCompleting(false);
     }
-  }, [stopSyncTimer, stopTickTimer, toast]);
+  }, [stopSyncTimer, stopTickTimer, toast, updateOutlineLesson]);
 
   const handleYoutubeTimeUpdate = useCallback((currentSecs) => {
     if (isCompletedRef.current) return;
@@ -254,25 +278,29 @@ export default function LessonViewer() {
     await completeLesson(duration);
   }, [completeLesson, isStudent, videoDurationSecs]);
 
-  const handleComplete = async () => {
-    if (!isStudent) return;
-    await completeLesson(watchSecsRef.current);
-  };
+  useEffect(() => {
+    if (!isStudent || !lesson || lesson.contentType === 'VIDEO' || progress.isCompleted) return;
+    if (String(autoCompletingLessonRef.current) === String(lesson.id)) return;
 
-  const handleSaveProgress = async () => {
-    if (!isStudent) return;
-    try {
-      setSyncing(true);
-      await lessonApi.updateProgress(lessonId, {
-        watchDurationSecs: watchSecsRef.current,
-        isCompleted: isCompletedRef.current,
-      });
-      toast.success('Progress saved');
-    } catch {
-      toast.error('Could not save progress');
-    } finally {
-      setSyncing(false);
+    autoCompletingLessonRef.current = lesson.id;
+    completeLesson(watchSecsRef.current);
+  }, [completeLesson, isStudent, lesson, progress.isCompleted]);
+
+  const handleLessonNavigate = async (targetPath) => {
+    if (isStudent && !shouldSkipProgressUpdate()) {
+      try {
+        setSyncing(true);
+        await lessonApi.updateProgress(lessonIdRef.current, {
+          watchDurationSecs: watchSecsRef.current,
+          isCompleted: isCompletedRef.current,
+        });
+      } catch (err) {
+        console.warn('[LessonViewer] Progress save before navigation failed:', err?.response?.status, err?.message);
+      } finally {
+        setSyncing(false);
+      }
     }
+    navigate(targetPath);
   };
 
   if (loading) return <LoadingSpinner text="Loading lesson..." />;
@@ -302,7 +330,7 @@ export default function LessonViewer() {
   const currentLessonMeta = currentLessonIndex >= 0 ? flatLessons[currentLessonIndex] : null;
 
   return (
-    <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 animate-fade-in lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="relative left-1/2 grid w-[calc(100vw-32px)] -translate-x-1/2 grid-cols-1 gap-6 animate-fade-in md:w-[calc(100vw-80px)] lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8">
       <aside className="hidden lg:block lg:sticky lg:top-6 lg:self-start">
         <LessonOutline
           outline={outline}
@@ -312,20 +340,11 @@ export default function LessonViewer() {
           totalLessons={flatLessons.length}
           courseBasePath={courseBasePath}
           courseId={courseId}
-          onNavigate={navigate}
+          onNavigate={handleLessonNavigate}
         />
       </aside>
 
-      <main className="space-y-5">
-        <Button
-          variant="ghost"
-          onClick={() => navigate(`${courseBasePath}/courses/${courseId}`)}
-          className="!px-0 text-neutral-500 hover:text-neutral-900 hover:bg-transparent group"
-        >
-          <ArrowLeft size={18} className="group-hover:-translate-x-0.5 transition-transform" />
-          <span className="text-sm font-medium">Back to course</span>
-        </Button>
-
+      <main className="min-w-0 space-y-5">
         {currentLessonMeta && (
           <div className="rounded-2xl border border-white/70 bg-white p-4 shadow-sm lg:hidden">
             <p className="text-xs font-semibold uppercase tracking-wide text-primary-500">
@@ -339,17 +358,6 @@ export default function LessonViewer() {
             </div>
           </div>
         )}
-
-        <LessonHeader
-          lesson={lesson}
-          isStudent={isStudent}
-          isVideoLesson={isVideoLesson}
-          progress={progress}
-          syncing={syncing}
-          completing={completing}
-          onSaveProgress={handleSaveProgress}
-          onComplete={handleComplete}
-        />
 
         <LessonContent
           lesson={lesson}
@@ -369,7 +377,7 @@ export default function LessonViewer() {
           <p className="text-center text-xs text-neutral-400 pb-4">
             {isYoutube || isVideoLesson
               ? 'Watch the full video to complete the lesson. Progress is saved when you leave.'
-              : 'Progress is saved every 30 seconds. Use Save progress to save now.'}
+              : 'This lesson will be marked completed when opened.'}
           </p>
         )}
         {isStudent && progress.isCompleted && (

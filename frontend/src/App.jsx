@@ -21,7 +21,6 @@ import AdminCourses from './pages/admin/Courses';
 import AdminCourseEditor from './pages/admin/CourseEditor';
 import AdminSubmissions from './pages/admin/Submissions';
 import AdminCourseAnalytics from './pages/admin/CourseAnalytics';
-import AdminDocuments from './pages/admin/Documents';
 
 // Instructor
 import InstructorCourses from './pages/instructor/Courses';
@@ -64,7 +63,6 @@ function App() {
               <Route path="/admin/courses/:courseId/lessons/:lessonId" element={<LessonViewer />} />
               <Route path="/admin/courses/:courseId/submissions/:assignmentId" element={<AdminSubmissions />} />
               <Route path="/admin/courses/:courseId/assignments/:assignmentId" element={<AssignmentDetailManage />} />
-              <Route path="/admin/documents" element={<AdminDocuments />} />
               <Route path="/admin/courses/:id" element={<CourseDetail />} />
             </Route>
 

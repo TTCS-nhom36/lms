@@ -19,6 +19,24 @@ import { useToast } from '../../hooks/useToast';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { ArrowLeft } from 'lucide-react';
 
+const shuffleList = (items) => {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+};
+
+const prepareQuizQuestions = (questions, assignment) => {
+  const withOptions = (questions || []).map((question) => ({
+    ...question,
+    options: assignment?.shuffleOptions ? shuffleList(question.options || []) : question.options || [],
+  }));
+
+  return assignment?.shuffleQuestions ? shuffleList(withOptions) : withOptions;
+};
+
 export default function AssignmentView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -35,6 +53,7 @@ export default function AssignmentView() {
   const [uploadedS3Key, setUploadedS3Key] = useState('');
   const [submissionFileUrl, setSubmissionFileUrl] = useState(null);
   const [quizResult, setQuizResult] = useState(null);
+  const [quizAttempt, setQuizAttempt] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [quizStarted, setQuizStarted] = useState(false);
   const [selectedAnswers, setSelectedAnswers] = useState({});
@@ -80,9 +99,11 @@ export default function AssignmentView() {
       if (assignmentData.type === 'QUIZ') {
         try {
           const attemptRes = await quizAttemptApi.getMyAttempt(id);
-          setQuizResult(attemptRes.data);
           quizAttemptResult = attemptRes.data;
+          setQuizAttempt(attemptRes.data);
+          setQuizResult(submissionData ? attemptRes.data : null);
         } catch {
+          setQuizAttempt(null);
           setQuizResult(null);
         }
 
@@ -135,13 +156,30 @@ export default function AssignmentView() {
     try {
       await quizAttemptApi.createAttempt({ assignmentId, userId: user.id });
       const questionRes = await assignmentApi.getQuestions(id);
-      setQuestions(questionRes.data || []);
+      setQuestions(prepareQuizQuestions(questionRes.data || [], assignment));
       setSelectedAnswers({});
       setQuizResult(null);
+      setQuizAttempt({ assignmentId, userId: user.id });
       setQuizStarted(true);
       if (assignment?.timeLimitMins > 0) startTimer(assignment.timeLimitMins);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to start quiz');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleContinueQuiz = async () => {
+    if (!quizAttempt || mySubmission || quizResult) return;
+    setSubmitting(true);
+    try {
+      const questionRes = await assignmentApi.getQuestions(id);
+      setQuestions(prepareQuizQuestions(questionRes.data || [], assignment));
+      setSelectedAnswers({});
+      setQuizStarted(true);
+      if (assignment?.timeLimitMins > 0) startTimer(assignment.timeLimitMins);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to continue quiz');
     } finally {
       setSubmitting(false);
     }
@@ -307,6 +345,7 @@ export default function AssignmentView() {
         <QuizMode
           assignment={assignment}
           quizResult={quizResult}
+          quizAttempt={quizAttempt}
           quizStarted={quizStarted}
           mySubmission={mySubmission}
           latestAttemptResult={latestAttemptResult}
@@ -320,6 +359,7 @@ export default function AssignmentView() {
           isPastDue={isPastDue}
           onReview={() => setShowReviewModal(true)}
           onStart={handleStartQuiz}
+          onContinue={handleContinueQuiz}
           onToggleAnswer={handleToggleAnswer}
           onSubmit={handleSubmitQuiz}
         />

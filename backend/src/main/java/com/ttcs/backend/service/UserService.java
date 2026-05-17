@@ -6,12 +6,16 @@ import com.ttcs.backend.dto.request.UpdateUserRoleRequest;
 import com.ttcs.backend.dto.request.UserRequest;
 import com.ttcs.backend.dto.response.PageResponse;
 import com.ttcs.backend.dto.response.UserResponse;
+import com.ttcs.backend.entity.Enrollment;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.enums.EnrollmentStatus;
 import com.ttcs.backend.enums.UserRole;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.UserMapper;
+import com.ttcs.backend.repository.EnrollmentRepository;
 import com.ttcs.backend.repository.UserRepository;
+import com.ttcs.backend.utils.PageUtils;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,13 +36,15 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final S3Service s3Service;
     private final CurrentUserService currentUserService;
+    private final EnrollmentRepository enrollmentRepository;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, S3Service s3Service, CurrentUserService currentUserService) {
+    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, S3Service s3Service, CurrentUserService currentUserService, EnrollmentRepository enrollmentRepository) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.s3Service = s3Service;
         this.currentUserService = currentUserService;
+        this.enrollmentRepository = enrollmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -48,14 +54,14 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public PageResponse<UserResponse> findPage(String search, UserRole role, Boolean active, int page, int size) {
-        List<UserResponse> filteredUsers = userRepository.findAll().stream()
+        List<UserResponse> filteredUsers = visibleUsers().stream()
                 .filter(user -> matchesSearch(user, search))
                 .filter(user -> role == null || user.getRole() == role)
                 .filter(user -> active == null || active.equals(user.getIsActive()))
                 .sorted(Comparator.comparing(User::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .map(userMapper::toResponse)
                 .toList();
-        return paginate(filteredUsers, page, size);
+        return PageUtils.paginate(filteredUsers, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -174,13 +180,17 @@ public class UserService {
                 || (user.getFullName() != null && user.getFullName().toLowerCase().contains(normalizedSearch));
     }
 
-    private PageResponse<UserResponse> paginate(List<UserResponse> items, int page, int size) {
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.max(size, 1);
-        int fromIndex = Math.min(safePage * safeSize, items.size());
-        int toIndex = Math.min(fromIndex + safeSize, items.size());
-        int totalPages = safeSize == 0 ? 0 : (int) Math.ceil((double) items.size() / safeSize);
-        return new PageResponse<>(items.subList(fromIndex, toIndex), safePage, safeSize, items.size(), totalPages);
+    private List<User> visibleUsers() {
+        if (!currentUserService.hasRole("INSTRUCTOR") || currentUserService.hasRole("ADMIN")) {
+            return userRepository.findAll();
+        }
+        UUID instructorId = currentUserService.getCurrentUserId();
+        return enrollmentRepository.findByCourseCreatedById(instructorId).stream()
+                .filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ACTIVE)
+                .map(Enrollment::getUser)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     private User findUserEntityById(UUID id) {

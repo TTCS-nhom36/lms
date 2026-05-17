@@ -2,13 +2,12 @@ package com.ttcs.backend.service.chat;
 
 import com.ttcs.backend.entity.*;
 import com.ttcs.backend.enums.EnrollmentStatus;
-import com.ttcs.backend.enums.UserRole;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.repository.*;
 import com.ttcs.backend.service.CurrentUserService;
+import com.ttcs.backend.utils.ChatTextUtils;
 import java.util.List;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
@@ -25,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class ChatCommonTools {
 
-    private static final int MAX = 20;
+    private static final int MAX = ChatTextUtils.MAX_PAGE_SIZE;
     private final CurrentUserService currentUserService;
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
@@ -33,38 +32,57 @@ public class ChatCommonTools {
     private final LessonRepository lessonRepository;
     private final ChatSemanticSearchService chatSemanticSearchService;
 
-    @Tool(description = "Tìm kiếm nội dung bài học, tài liệu học tập, và file tài liệu theo chủ đề hoặc từ khóa.")
+    @Tool(description = "Tìm kiếm nội dung bên trong bài học, tài liệu học tập và file tài liệu theo từ khóa/chủ đề. "
+            + "Dùng tool này khi người dùng hỏi về kiến thức, nội dung bài giảng, tài liệu, hoặc muốn tìm đoạn tài liệu liên quan; "
+            + "không dùng để liệt kê khóa học, bài tập, điểm số hoặc tiến độ.")
     @Transactional(readOnly = true)
     public String searchLessonContent(
-            @ToolParam(description = "Từ khóa tìm kiếm hoặc chủ đề") String query) {
+            @ToolParam(description = "Từ khóa/chủ đề cần tìm trong nội dung bài học hoặc tài liệu") String query) {
         User user = user();
         List<Long> courseIds = visibleCourseIds(user);
-        log.info("Tool searchLessonContent userId={} role={} query='{}'", user.getId(), user.getRole(), query);
-        return chatSemanticSearchService.search(user, query, courseIds);
+        log.info("Chat tool start name=searchLessonContent userId={} role={} query='{}' visibleCourseCount={}",
+                user.getId(), user.getRole(), query, courseIds.size());
+        String result = chatSemanticSearchService.search(user, query, courseIds);
+        log.info("Chat tool end name=searchLessonContent userId={} role={} resultChars={}",
+                user.getId(), user.getRole(), result.length());
+        return result;
     }
 
-    @Tool(description = "Lấy thông tin chi tiết về một khóa học cụ thể bao gồm các chương và bài học.")
+    @Tool(description = "Tra cứu thông tin chi tiết của khóa học mà người dùng có quyền xem: mô tả, giảng viên, chương và bài học. "
+            + "Dùng khi người dùng hỏi 'khóa học X có gì', 'nội dung khóa học X', 'các bài học trong khóa X'. "
+            + "Có thể tìm theo tên/mô tả khóa học và có phân trang. Nếu người dùng không nêu tên khóa học, truyền courseName rỗng. "
+            + "page bắt đầu từ 0; nếu thiếu page dùng 0. size tối đa 20; nếu thiếu size dùng 10.")
     @Transactional(readOnly = true)
     public String getCourseDetails(
-            @ToolParam(description = "Tên khóa học hoặc từ khóa tìm kiếm") String courseName) {
+            @ToolParam(description = "Tên khóa học, một phần tên, hoặc từ khóa trong mô tả; để rỗng nếu muốn xem tất cả khóa học có quyền xem") String courseName,
+            @ToolParam(description = "Trang kết quả bắt đầu từ 0; có thể bỏ trống") Integer page,
+            @ToolParam(description = "Số khóa học mỗi trang, tối đa 20; có thể bỏ trống") Integer size) {
         User user = user();
         List<Course> courses = visibleCourses(user);
-        log.info("Tool getCourseDetails userId={} role={} courseName='{}'", user.getId(), user.getRole(), courseName);
+        log.info("Chat tool start name=getCourseDetails userId={} role={} courseName='{}' page={} size={} visibleCourseCount={}",
+                user.getId(), user.getRole(), courseName, ChatTextUtils.safePage(page),
+                ChatTextUtils.safeSize(size), courses.size());
 
-        String normalized = ChatTextUtils.normalize(courseName);
         List<Course> matched = courses.stream()
                 .filter(c -> {
-                    String t = ChatTextUtils.normalize(c.getTitle());
-                    String d = ChatTextUtils.normalize(c.getDescription() != null ? c.getDescription() : "");
-                    return t.contains(normalized) || d.contains(normalized);
+                    String description = c.getDescription() != null ? c.getDescription() : "";
+                    return ChatTextUtils.matchesName(c.getTitle(), courseName)
+                            || ChatTextUtils.matchesName(description, courseName);
                 })
-                .limit(3).toList();
+                .toList();
 
-        if (matched.isEmpty())
+        if (matched.isEmpty()) {
+            log.info("Chat tool end name=getCourseDetails userId={} role={} total=0 returned=0",
+                    user.getId(), user.getRole());
             return "Khong tim thay khoa hoc '" + courseName + "'.";
+        }
 
-        StringBuilder sb = new StringBuilder();
-        for (Course c : matched) {
+        List<Course> pageRows = ChatTextUtils.page(matched, page, size);
+        log.info("Chat tool end name=getCourseDetails userId={} role={} total={} returned={} page={} size={}",
+                user.getId(), user.getRole(), matched.size(), pageRows.size(),
+                ChatTextUtils.safePage(page), ChatTextUtils.safeSize(size));
+        StringBuilder sb = ChatTextUtils.pageHeader("Khoa hoc", matched.size(), page, size);
+        for (Course c : pageRows) {
             sb.append("[Khoa: ").append(c.getTitle()).append("]\n");
             sb.append("Mo ta: ").append(c.getDescription() != null ? c.getDescription() : "-").append("\n");
             sb.append("GV: ").append(c.getCreatedBy().getFullName()).append(" | TT: ").append(c.getStatus())
@@ -91,7 +109,7 @@ public class ChatCommonTools {
 
     private List<Course> visibleCourses(User u) {
         return switch (u.getRole()) {
-            case ADMIN -> courseRepository.findAll().stream().limit(MAX).toList();
+            case ADMIN -> courseRepository.findAll();
             case INSTRUCTOR -> courseRepository.findByCreatedById(u.getId());
             case STUDENT -> enrollmentRepository.findByUserId(u.getId()).stream()
                     .filter(e -> e.getStatus() == EnrollmentStatus.ACTIVE)

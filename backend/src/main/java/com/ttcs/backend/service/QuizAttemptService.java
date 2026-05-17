@@ -12,6 +12,7 @@ import com.ttcs.backend.entity.QuestionOption;
 import com.ttcs.backend.entity.QuizAttempt;
 import com.ttcs.backend.entity.SelectedAnswer;
 import com.ttcs.backend.entity.User;
+import com.ttcs.backend.enums.EnrollmentStatus;
 import com.ttcs.backend.exception.AppException;
 import com.ttcs.backend.exception.ErrorCode;
 import com.ttcs.backend.mapper.QuizAttemptMapper;
@@ -116,10 +117,18 @@ public class QuizAttemptService {
             Question question = questionRepository.findById(answerReq.getQuestionId())
                     .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND,
                             "Question not found: " + answerReq.getQuestionId()));
+            if (question.getAssignment() == null
+                    || !attempt.getAssignment().getId().equals(question.getAssignment().getId())) {
+                throw new AppException(ErrorCode.BAD_REQUEST, "Question does not belong to this quiz");
+            }
 
             QuestionOption selectedOption = questionOptionRepository.findById(answerReq.getSelectedAnswerId())
                     .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND,
                             "Option not found: " + answerReq.getSelectedAnswerId()));
+            if (selectedOption.getQuestion() == null
+                    || !question.getId().equals(selectedOption.getQuestion().getId())) {
+                throw new AppException(ErrorCode.BAD_REQUEST, "Option does not belong to this question");
+            }
 
             SelectedAnswer selectedAnswer = SelectedAnswer.builder()
                     .quizAttempt(attempt)
@@ -197,11 +206,12 @@ public class QuizAttemptService {
         if (assignment == null || assignment.getCourse() == null || userId == null) {
             throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
         }
-        boolean enrolled = enrollmentRepository.findAll().stream()
+        boolean enrolled = enrollmentRepository.findByUserId(userId).stream()
                 .anyMatch(enrollment -> enrollment.getUser() != null
                         && userId.equals(enrollment.getUser().getId())
                         && enrollment.getCourse() != null
-                        && assignment.getCourse().getId().equals(enrollment.getCourse().getId()));
+                        && assignment.getCourse().getId().equals(enrollment.getCourse().getId())
+                        && enrollment.getStatus() == EnrollmentStatus.ACTIVE);
         if (!enrolled) {
             throw new AppException(ErrorCode.ACCESS_DENIED, "Assignment requires enrollment");
         }

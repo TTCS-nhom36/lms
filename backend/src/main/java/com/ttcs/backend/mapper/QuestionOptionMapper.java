@@ -10,6 +10,14 @@ import org.springframework.stereotype.Component;
 public class QuestionOptionMapper {
 
     public QuestionOptionResponse toResponse(QuestionOption questionOption) {
+        return toResponse(questionOption, true);
+    }
+
+    public QuestionOptionResponse toResponseWithoutCorrectAnswer(QuestionOption questionOption) {
+        return toResponse(questionOption, false);
+    }
+
+    private QuestionOptionResponse toResponse(QuestionOption questionOption, boolean includeCorrectAnswer) {
         if (questionOption == null) {
             return null;
         }
@@ -18,7 +26,7 @@ public class QuestionOptionMapper {
                 .id(questionOption.getId())
                 .questionId(questionOption.getQuestion() != null ? questionOption.getQuestion().getId() : null)
                 .content(questionOption.getContent())
-                .isCorrect(questionOption.getIsCorrect())
+                .isCorrect(includeCorrectAnswer ? questionOption.getIsCorrect() : null)
                 .orderIndex(questionOption.getOrderIndex())
                 .build();
     }
