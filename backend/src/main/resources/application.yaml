@@ -2,14 +2,17 @@ spring:
   application:
     name: backend
 
+  config:
+    import: optional:file:.env[.properties]
+
   jackson:
     time-zone: Asia/Ho_Chi_Minh
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/lms
-    username: root
-    password: 123456
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/lms}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   
   jpa:
     hibernate:
@@ -27,8 +30,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: vuminh69w@gmail.com
-    password: jiul iygk bhev hdsa
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -49,7 +52,7 @@ spring:
   ai:
     google:
       genai:
-        api-key: AIzaSyBWSrmj25eyNsU0-SwQARtRIW2zidjZIxs
+        api-key: ${GOOGLE_GENAI_API_KEY}
         chat:
           options:
             model: gemini-3.1-flash-lite
@@ -69,11 +72,11 @@ server:
   port: 8080
 
 jwt:
-  secret-key: YTJiM2M0ZDVlNmY3ZzhoOWkwajFrMmwzbTRuNW82cDdxOHI5czB0MXUydjN3NHg1eTZ6N0E4QjlDMEQxRTJGM0c0SDVJNko3SzhM
+  secret-key: ${JWT_SECRET_KEY}
 
 aws:
   s3:
     access-key: ${AWS_ACCESS_KEY_ID}
     secret-key: ${AWS_SECRET_ACCESS_KEY}
-    region: ap-southeast-1
-    bucket: lms-ttcs
+    region: ${AWS_S3_REGION:ap-southeast-1}
+    bucket: ${AWS_S3_BUCKET}
